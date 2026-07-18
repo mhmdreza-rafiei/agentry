@@ -6,7 +6,7 @@ description: >
   Rewrites casual or vague chat into precise, portable agent instructions
   without injecting workspace paths, stack, or session-local context.
   Preserves user-stated contracts (API shapes, fields, remove/keep lists);
-  attaches related skills and a prompt summary inside the enhanced prompt.
+  attaches related skills and an after-finish summary instruction for the implementing agent.
 ---
 
 # enhance-prompt
@@ -70,7 +70,7 @@ Use only sections that have content; drop empty ones. Keep one structure.
 - **Related skills** — see pass 5
 - **Output** — expected deliverable format
 - **Open questions** (optional) — unresolved ambiguities; “resolve, don’t guess”
-- **Prompt summary** — see pass 6 (always at the end of the enhanced prompt)
+- **After you finish** — see pass 6 (always at the end of the enhanced prompt)
 
 After drafting: **Goal ↔ Contract ↔ Constraints ↔ Steps must agree** (e.g. if register verifies OTP inside, body must include `code` unless the user said otherwise).
 
@@ -91,13 +91,16 @@ Discover skills relevant to the enhanced prompt and **attach them inside the pro
 5. Instruct the agent to **load and follow** those skills while executing.
 6. Do not invent skill names that are not discoverable. If none found, omit the section or write `None found — proceed with workspace defaults.`
 
-### 6) Prompt summary (inside the enhanced prompt)
+### 6) After you finish (handoff summary instruction)
 
-End the enhanced prompt with a **Prompt summary** section: a short restatement of the *prompt itself* (goal + key contracts + must-nots) for the implementing agent.
+End the enhanced prompt with an **After you finish** section that tells the *implementing* agent: once the work is done, write a summary of the result.
 
-- This is **not** a meta “what the enhancer changed” note.
-- 3–6 bullets or ~5–8 short lines max.
-- Always include when producing an enhanced prompt (unless the user asked to omit summaries).
+Requirements for that summary instruction:
+
+- Plain language — anyone should understand it (not only the author)
+- Still detailed — cover what changed, what was added/removed, and how to verify
+- Not a restatement of the prompt; not an enhancer changelog
+- Always include (unless the user asked to omit post-work summaries)
 
 Optional chat-only note after the copy-ready block (enhancer changelog) remains optional and separate — omit if overloaded or user disabled it.
 
@@ -117,6 +120,6 @@ Always-on means: rewrite the user’s message into a better agent prompt **befor
 
 ## Output
 
-1. One copy-ready enhanced prompt (includes Related skills when found + Prompt summary at the end).
+1. One copy-ready enhanced prompt (includes Related skills when found + **After you finish** at the end).
 2. Optionally a brief chat-only enhancer changelog outside that block.
 3. Do not announce skill usage unless the user asks.
