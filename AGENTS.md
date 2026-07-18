@@ -8,7 +8,7 @@ This repo packages installable Agent Skills. Prefer progressive disclosure: lean
 
 | Skill | When to use | Always-use? |
 |-------|-------------|-------------|
-| `/enhance-prompt` | User asks to enhance, improve, rewrite, optimize, or clarify a prompt — or always-on is enabled for the session | Opt-in (see below) |
+| `/enhance-prompt` | User asks to enhance, improve, rewrite, optimize, or clarify a prompt — or always-on is enabled. Preserves user contracts; attaches related skills + prompt summary | Opt-in (see below) |
 
 ### Skill-authoring toolkit
 

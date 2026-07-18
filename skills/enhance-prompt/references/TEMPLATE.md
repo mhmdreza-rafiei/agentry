@@ -1,6 +1,6 @@
 # enhance-prompt — output template
 
-Correct shape and wrong-vs-right examples. Keep enhanced prompts portable: no workspace paths, no assumed stack.
+Correct shape and wrong-vs-right examples. Enhance = clarify + structure. **Never strip user-stated contracts** (fields, endpoints, remove/keep). Never inject paths/stack.
 
 ## Correct output shape
 
@@ -10,19 +10,32 @@ Correct shape and wrong-vs-right examples. Keep enhanced prompts portable: no wo
 ## Goal
 <what success looks like>
 
+## Contract
+<optional — endpoint/body/remove-keep lists the user stated>
+
 ## Constraints
 - <must / must-not>
-- <boundaries the user stated>
+- <user-stated boundaries — keep field names exact>
 
 ## Steps
-1. <only if the task needs ordered instructions>
+1. <only if needed>
 2. …
 
+## Related skills
+- `/skill-name` — use for <why>
+- …
+
 ## Output
-<expected format>
+<expected deliverable format>
+
+## Open questions
+- <optional — resolve, don’t guess>
+
+## Prompt summary
+- <restatement of goal + key contracts + must-nots for the implementing agent>
 ```
 
-Omit **Steps** (or any section) when empty. Do not invent constraints.
+Omit empty optional sections. **Prompt summary** stays at the end. Do not invent constraints or field names.
 
 ---
 
@@ -45,11 +58,20 @@ Raise the visual quality of the frontend so the first viewport and overall UI fe
 ## Constraints
 - Preserve existing product behavior and content unless a change is required for the visual improvement
 - Do not invent a brand system, stack, or design language the user did not request
-- Prefer the target workspace’s existing design system / patterns when present (`AGENTS.md`, `context/`, open files)
+- Prefer the target workspace’s existing design system / patterns when present
 - Keep the first viewport uncluttered: brand/product signal, one headline, short support line, CTA group, one dominant visual
+
+## Related skills
+- `/frontend-design` — use for layout, visual hierarchy, and UI polish (if installed)
+- None found beyond defaults — proceed with workspace design rules if no matching skills
 
 ## Output
 Implement UI improvements in the target workspace; summarize what changed and why.
+
+## Prompt summary
+- Improve frontend visual quality without inventing brand/stack
+- Prefer existing workspace design patterns
+- Deliver UI changes + short change summary
 ```
 
 **Out (wrong — invents stack / paths):**
@@ -87,8 +109,17 @@ Tapping the login control on mobile performs the expected auth action again.
 2. Trace the mobile click/handler path vs desktop
 3. Fix root cause; add or update the smallest regression check
 
+## Related skills
+- `/skill-check` — only if validating skill/docs changes (skip if unrelated)
+- Prefer any installed auth/test skills in the target agent
+
 ## Output
 Fix + brief note of root cause and how to verify on mobile.
+
+## Prompt summary
+- Fix mobile login tap no-op; leave desktop alone
+- Likely tied to recent auth refactor
+- Ship fix + verify notes / regression check
 ```
 
 **Out (wrong — path injection):**
@@ -100,37 +131,98 @@ Fix `packages/auth/src/LoginButton.tsx` under /workspace/acme-app ...
 
 ---
 
-## Example C — anti-pattern: path / stack leak from another workspace
+## Example C — anti-pattern: path / stack leak
 
-**Wrong (pasted authoring-machine or other-workspace context):**
+**Wrong:**
 
 ```markdown
 # Refactor billing
-
 ## Goal
 Clean up billing in /home/ubuntu/old-client and /Users/dev/acme/billing-service.
-
 ## Constraints
 - Stack: Next.js 14, Prisma, tRPC, Tailwind, Redis
-- See docs dumped from README and architecture.md below:
-  <long paste>
 ```
 
-**Right (portable):**
+**Right:** keep portable goal/constraints; load stack from target workspace. No path/stack paste.
+
+---
+
+## Example D — rich auth refactor: preserve contracts (do not dilute)
+
+**In (excerpt of user intent):**
+
+```text
+OTP verify should be internal only. Flow: otp/request → action (login | register | password-change).
+Remove public verify-OTP and separate change/reset password APIs.
+password-change shaped like login: secret, method, phone.
+Register: phone, password, code — no method/secret; verify OTP inside register.
+locale_pref from localStorage preferred, else cookies.
+```
+
+**Out (wrong — stripped fields / invented names):**
 
 ```markdown
-# Refactor billing
-
-## Goal
-Improve billing code clarity and maintainability without changing external behavior.
-
 ## Constraints
-- Preserve existing billing behavior and public APIs unless the user explicitly allows breaking changes
-- Prefer patterns already used in the target workspace; do not assume a stack
-- Load project docs from the target workspace (`AGENTS.md`, `context/`) instead of pasting them here
-
-## Output
-Refactor + short summary of what moved and how to verify billing flows.
+- Register: accept phone-number and password only
 ```
 
-**Rule:** If a path, home directory, or stack list only made sense in the session that wrote the prompt, strip it. Use `[use target workspace context]` when a pointer is needed.
+That drops `code`, renames `phone` → `phone-number`, and hurts accuracy.
+
+**Out (right — contracts kept, no path/stack dump):**
+
+```markdown
+# Auth: OTP internal + collapse password APIs
+
+## Goal
+Refactor auth so OTP verification is internal only. Public flow: request OTP, then call the action endpoint (`login` | `register` | `password-change`). Remove standalone verify-OTP and separate change/reset password APIs.
+
+## Contract
+Desired public API:
+- `POST /auth/otp/request` — `{ phone, purpose }`
+- `POST /auth/login` — `{ phone, method, secret }`
+- `POST /auth/register` — `{ phone, password, code }` (OTP verified inside register)
+- `POST /auth/password-change` — `{ phone, method, secret, new_password }`
+- Keep refresh/logout unchanged
+
+Remove:
+- public verify-OTP endpoint
+- separate password change + reset endpoints
+- any otp_proof / proof-cookie register flow if present
+
+## Constraints
+- Keep verify-OTP as an internal function only — do not re-expose it
+- Register body is `{ phone, password, code }` — no `method`, no `secret`
+- `password-change` request shape matches login plus `new_password`
+- `locale_pref`: prefer frontend `localStorage`; fall back to cookies
+- Do not invent auth fields, status codes, or error shapes beyond the target workspace
+- Preserve security behaviors already in the workspace (rate limits, session revoke on password change, etc.) unless the user said otherwise
+- Use target workspace context for existing routes, models, and tests — do not paste paths/stack
+
+## Steps
+1. Map current auth endpoints and callers
+2. Make verify-OTP internal; remove public verify-OTP
+3. Wire login / register / password-change to validate OTP internally when needed
+4. Replace change+reset with `/auth/password-change`
+5. Align frontend: otp/request → action
+6. Update tests for the new flow (valid + invalid OTP)
+
+## Related skills
+- List installed skills that match auth, API, frontend, or testing (discovered in target env)
+- Instruct agent to load and follow each listed skill
+
+## Output
+- Backend + frontend implementing the contract above
+- Brief summary of removed vs new endpoints and how to verify with tests
+
+## Open questions
+- For authenticated vs unauthenticated password-change: resolve OTP purpose / phone-vs-session rules from workspace auth context — do not guess silently
+
+## Prompt summary
+- OTP verify is internal; public flow is otp/request → action
+- Register `{ phone, password, code }`; password-change matches login + `new_password`
+- Remove public verify-OTP and old change/reset password APIs
+- Keep refresh/logout; preserve existing security behavior
+- Load related skills; deliver code + verify notes
+```
+
+**Rule:** Paths/stack from a scan = strip. User-stated `{ phone, password, code }` and endpoint lists = **keep**.
