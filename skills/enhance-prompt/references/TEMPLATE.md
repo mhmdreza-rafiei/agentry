@@ -31,11 +31,14 @@ Correct shape and wrong-vs-right examples. Enhance = clarify + structure. **Neve
 ## Open questions
 - <optional — resolve, don’t guess>
 
-## Prompt summary
-- <restatement of goal + key contracts + must-nots for the implementing agent>
+## After you finish
+When the work is done, write a summary that anyone can understand, while remaining detailed:
+- What you changed (and what you removed/added)
+- How to verify
+- Anything still open or risky
 ```
 
-Omit empty optional sections. **Prompt summary** stays at the end. Do not invent constraints or field names.
+Omit empty optional sections. **After you finish** stays at the end. Do not invent constraints or field names.
 
 ---
 
@@ -66,12 +69,10 @@ Raise the visual quality of the frontend so the first viewport and overall UI fe
 - None found beyond defaults — proceed with workspace design rules if no matching skills
 
 ## Output
-Implement UI improvements in the target workspace; summarize what changed and why.
+Implement UI improvements in the target workspace.
 
-## Prompt summary
-- Improve frontend visual quality without inventing brand/stack
-- Prefer existing workspace design patterns
-- Deliver UI changes + short change summary
+## After you finish
+Write a plain-language summary anyone can follow: what looked weak before, what you changed, and how to check it on desktop and mobile.
 ```
 
 **Out (wrong — invents stack / paths):**
@@ -114,12 +115,10 @@ Tapping the login control on mobile performs the expected auth action again.
 - Prefer any installed auth/test skills in the target agent
 
 ## Output
-Fix + brief note of root cause and how to verify on mobile.
+Fix + verification notes.
 
-## Prompt summary
-- Fix mobile login tap no-op; leave desktop alone
-- Likely tied to recent auth refactor
-- Ship fix + verify notes / regression check
+## After you finish
+Write a plain-language summary anyone can follow: root cause, what you changed, that desktop was left alone, and how to verify the mobile login tap.
 ```
 
 **Out (wrong — path injection):**
@@ -212,17 +211,16 @@ Remove:
 
 ## Output
 - Backend + frontend implementing the contract above
-- Brief summary of removed vs new endpoints and how to verify with tests
 
 ## Open questions
 - For authenticated vs unauthenticated password-change: resolve OTP purpose / phone-vs-session rules from workspace auth context — do not guess silently
 
-## Prompt summary
-- OTP verify is internal; public flow is otp/request → action
-- Register `{ phone, password, code }`; password-change matches login + `new_password`
-- Remove public verify-OTP and old change/reset password APIs
-- Keep refresh/logout; preserve existing security behavior
-- Load related skills; deliver code + verify notes
+## After you finish
+Write a plain-language summary anyone can follow, while remaining detailed:
+- What changed in the auth flow (before → after)
+- Which endpoints were removed vs added/updated (with request shapes)
+- How to verify (tests run + expected results)
+- Any open decisions still unresolved
 ```
 
 **Rule:** Paths/stack from a scan = strip. User-stated `{ phone, password, code }` and endpoint lists = **keep**.
