@@ -2,7 +2,7 @@
 
 A portable Agent Skills package. Skills are installable folders (`skills/<name>/SKILL.md`) that coding agents load on demand.
 
-First skill: **`enhance-prompt`** — rewrites casual or vague chat into precise, portable agent instructions without injecting workspace paths, stack, or session-local context.
+First skill: **`enhance-prompt`** — rewrites casual or vague chat into precise, portable agent instructions without injecting workspace paths/stack; preserves contracts; can ask mode / better-decision questions; attaches related skills and an after-finish summary instruction.
 
 ## Install
 
