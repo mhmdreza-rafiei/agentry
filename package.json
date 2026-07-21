@@ -1,5 +1,5 @@
 {
-  "name": "agentry",
+  "name": "@mhmdreza-rafiei/agentry",
   "version": "0.1.0",
   "description": "One CLI to install agents, skills, rules, and scripts into any project or globally — portable AI/agent tooling.",
   "bin": {
