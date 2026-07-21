@@ -1,0 +1,8 @@
+node_modules/
+.DS_Store
+*.log
+.skills/
+skills-lock.json
+.cursor/skills/
+.claude/skills/
+.codex/skills/
