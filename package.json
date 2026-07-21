@@ -1,0 +1,37 @@
+{
+  "name": "agentry",
+  "version": "0.1.0",
+  "description": "One CLI to install agents, skills, rules, and scripts into any project or globally — portable AI/agent tooling.",
+  "bin": {
+    "agentry": "bin/agentry.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "agents",
+    "skills",
+    "rules",
+    "scripts",
+    "profiles.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "agentry": "node bin/agentry.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "skills",
+    "rules",
+    "cli",
+    "cursor",
+    "agentic",
+    "scaffold"
+  ],
+  "license": "MIT"
+}
