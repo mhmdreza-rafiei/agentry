@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-// Assets install under `<root>/.cursor/<type>/<name>`.
+// Assets install under `<root>/.cursor/<type>/<category>/<name>`.
 // ponytail: single target dir (.cursor) for now; per-agent targets (.claude, .codex)
 // can be added later via a `target` field in each asset's agentry.json.
 function targetRoot({ global: isGlobal, dir } = {}) {
@@ -31,25 +31,34 @@ function writeLock(root, lock) {
 
 function installOne(asset, opts) {
   const root = targetRoot(opts);
-  const dest = path.join(root, asset.type, asset.name);
+  const dest = path.join(root, asset.type, asset.id);
   fs.rmSync(dest, { recursive: true, force: true }); // idempotent re-install
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.cpSync(asset.dir, dest, { recursive: true });
   const lock = readLock(root);
-  lock.items[`${asset.type}/${asset.name}`] = { installedAt: new Date().toISOString() };
+  lock.items[`${asset.type}/${asset.id}`] = { installedAt: new Date().toISOString() };
   writeLock(root, lock);
   return dest;
 }
 
-function removeOne(type, name, opts) {
+// Removes a type, a category, or a single asset from the install target.
+// selector: undefined -> whole type; "category" -> category; "category/name" -> one asset.
+function removeSelection(type, selector, opts) {
   const root = targetRoot(opts);
-  const dest = path.join(root, type, name);
+  const rel = [type, selector].filter(Boolean).join('/');
+  const dest = path.join(root, rel);
   const existed = fs.existsSync(dest);
   fs.rmSync(dest, { recursive: true, force: true });
   const lock = readLock(root);
-  delete lock.items[`${type}/${name}`];
+  const removedKeys = [];
+  for (const key of Object.keys(lock.items)) {
+    if (key === rel || key.startsWith(rel + '/')) {
+      delete lock.items[key];
+      removedKeys.push(key);
+    }
+  }
   writeLock(root, lock);
-  return existed;
+  return { existed, removedKeys };
 }
 
-module.exports = { targetRoot, lockPath, readLock, installOne, removeOne };
+module.exports = { targetRoot, lockPath, readLock, installOne, removeSelection };

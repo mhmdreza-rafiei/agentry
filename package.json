@@ -8,11 +8,8 @@
   "files": [
     "bin",
     "src",
-    "agents",
-    "skills",
-    "rules",
-    "scripts",
-    "profiles.json",
+    "profile",
+    "examples",
     "README.md",
     "LICENSE"
   ],

@@ -3,8 +3,15 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+// Discovers assets inside a *source root* (a fetched repo or local path).
+// Two discovery modes, unioned:
+//   1) Under <type>/ :   <type>/<name>/  or  <type>/<category>/<name>/
+//   2) At the repo root (like `npx skills add`), classified by a marker file:
+//        <name>/SKILL.md            -> skills/<name>
+//        <group>/<name>/SKILL.md    -> skills/<group>/<name>
+//      (AGENT.md -> agents, RULE.md -> rules). Scripts have no root marker.
 const TYPES = ['agents', 'skills', 'rules', 'scripts'];
-const repoRoot = path.resolve(__dirname, '..');
+const MARKERS = { skills: 'SKILL.md', agents: 'AGENT.md', rules: 'RULE.md', scripts: null };
 
 function readJson(file) {
   try {
@@ -14,12 +21,23 @@ function readJson(file) {
   }
 }
 
+function entries(dir) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+function hasFile(dir) {
+  return entries(dir).some((e) => e.isFile());
+}
+
 function firstHeading(md) {
   const m = md.match(/^#\s+(.+)$/m);
   return m ? m[1].trim() : '';
 }
 
-// Reads `description:` from YAML frontmatter, supporting folded/literal blocks.
 function frontmatterDescription(md) {
   const fm = md.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!fm) return '';
@@ -54,52 +72,74 @@ function assetDescription(dir) {
   return '';
 }
 
-function listType(type) {
-  const base = path.join(repoRoot, type);
-  if (!fs.existsSync(base)) return [];
-  return fs
-    .readdirSync(base, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => ({
-      type,
-      name: d.name,
-      dir: path.join(base, d.name),
-      description: assetDescription(path.join(base, d.name)),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+function hasMarker(dir, marker) {
+  return !!marker && fs.existsSync(path.join(dir, marker));
 }
 
-function allAssets() {
-  return TYPES.flatMap(listType);
+function makeAsset(type, category, name, dir) {
+  const id = category ? `${category}/${name}` : name;
+  return { type, category, name, id, dir, description: assetDescription(dir) };
 }
 
-function getAsset(type, name) {
-  return listType(type).find((a) => a.name === name) || null;
+// Assets living under an explicit <type>/ folder (this repo's own convention).
+function collectFromTypeDir(base, type, out) {
+  for (const child of entries(base)) {
+    if (!child.isDirectory()) continue;
+    const childDir = path.join(base, child.name);
+    if (hasFile(childDir)) {
+      out.push(makeAsset(type, null, child.name, childDir));
+    } else {
+      for (const item of entries(childDir)) {
+        if (!item.isDirectory()) continue;
+        out.push(makeAsset(type, child.name, item.name, path.join(childDir, item.name)));
+      }
+    }
+  }
 }
 
-function loadProfiles() {
-  return readJson(path.join(repoRoot, 'profiles.json')) || {};
+// Assets at the repo root, identified by marker file (e.g. SKILL.md).
+function collectFromRoot(root, type, marker, out) {
+  if (!marker) return;
+  for (const child of entries(root)) {
+    if (!child.isDirectory()) continue;
+    if (child.name.startsWith('.') || child.name === 'node_modules' || TYPES.includes(child.name)) continue;
+    const childDir = path.join(root, child.name);
+    if (hasMarker(childDir, marker)) {
+      out.push(makeAsset(type, null, child.name, childDir));
+    } else {
+      for (const item of entries(childDir)) {
+        if (item.isDirectory() && hasMarker(path.join(childDir, item.name), marker)) {
+          out.push(makeAsset(type, child.name, item.name, path.join(childDir, item.name)));
+        }
+      }
+    }
+  }
 }
 
-function profileNames() {
-  return Object.keys(loadProfiles());
+function listType(root, type) {
+  const out = [];
+  const base = path.join(root, type);
+  if (fs.existsSync(base)) collectFromTypeDir(base, type, out);
+  collectFromRoot(root, type, MARKERS[type], out);
+  const seen = new Set();
+  return out
+    .filter((a) => (seen.has(a.id) ? false : seen.add(a.id)))
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
-function resolveProfile(name) {
-  const profiles = loadProfiles();
-  if (!(name in profiles)) return null;
-  const spec = profiles[name];
-  if (spec === '*' || (Array.isArray(spec) && spec.includes('*'))) return allAssets();
-  return spec.map((e) => getAsset(e.type, e.name)).filter(Boolean);
+function allAssets(root) {
+  return TYPES.flatMap((t) => listType(root, t));
 }
 
-module.exports = {
-  TYPES,
-  repoRoot,
-  listType,
-  allAssets,
-  getAsset,
-  loadProfiles,
-  profileNames,
-  resolveProfile,
-};
+// selector: undefined -> whole type; "category/name" -> one asset;
+// "category" -> whole category; bare name -> fallback exact-name match.
+function select(root, type, selector) {
+  const items = listType(root, type);
+  if (!selector) return items;
+  if (selector.includes('/')) return items.filter((a) => a.id === selector);
+  const byCategory = items.filter((a) => a.category === selector);
+  if (byCategory.length) return byCategory;
+  return items.filter((a) => a.name === selector);
+}
+
+module.exports = { TYPES, listType, allAssets, select };
