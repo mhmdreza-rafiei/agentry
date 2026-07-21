@@ -49,3 +49,13 @@ Remove the always-apply registration from `AGENTS.md` / agent skill config, or t
 - New skills live under `skills/<skill-name>/`.
 - Do not invent product requirements beyond what the skill documents.
 - No hardcoded absolute paths from an authoring machine in skill text or templates.
+
+## Cursor Cloud specific instructions
+
+Content-only repo: skills are Markdown under `skills/<name>/`. There is **no** `package.json`, lockfile, build, lint, or test suite to run in-repo, and no long-running service. "Running the app" means exercising the external `skills` CLI against these skill folders.
+
+- Discover skills (must list `enhance-prompt`): `npx skills add . --list` — see `README.md`.
+- Install one skill into a target project: `npx skills add <repo-or-path> --skill <name>` — see `README.md` for all variants.
+- The `skills` CLI is fetched on demand via `npx` (not vendored); first run needs network. It auto-detects a coding agent and installs non-interactively, so no TTY prompts to worry about.
+- Discovery is depth-limited: keep each skill as `skills/<name>/SKILL.md` (or `skills/<group>/<name>/SKILL.md`); nesting deeper is not discovered.
+- Validate a `SKILL.md` before shipping with the external `/skill-check` skill (not vendored here).
