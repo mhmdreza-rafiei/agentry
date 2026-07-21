@@ -1,0 +1,5 @@
+{
+  "agents": ["frontend"],
+  "skills": ["prompt/enhance-prompt"],
+  "rules": ["workflow/ask-dont-guess"]
+}
