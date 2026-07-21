@@ -1,0 +1,13 @@
+{
+  "all": "*",
+  "frontend": [
+    { "type": "agents", "name": "frontend-developer" },
+    { "type": "skills", "name": "enhance-prompt" },
+    { "type": "rules", "name": "ask-dont-guess" }
+  ],
+  "backend": [
+    { "type": "skills", "name": "enhance-prompt" },
+    { "type": "rules", "name": "ask-dont-guess" },
+    { "type": "scripts", "name": "doctor" }
+  ]
+}
