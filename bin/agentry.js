@@ -4,6 +4,8 @@
 const readline = require('node:readline');
 const { execSync } = require('node:child_process');
 const reg = require('../src/registry');
+const src = require('../src/source');
+const prof = require('../src/profile');
 const cmd = require('../src/commands');
 const pkg = require('../package.json');
 
@@ -24,37 +26,40 @@ function parseArgs(argv) {
   return { flags, positional };
 }
 
-const HELP = `agentry — install agents, skills, rules, and scripts into any project or globally.
+const HELP = `agentry — a raw installer for agents, skills, rules, and scripts from any repo.
 
 Usage:
-  agentry <action> <target> [name] [options]
-
-Actions:
-  add       Install asset(s) into a project or globally
-  remove    Uninstall previously added asset(s)
-  list      Show available assets (optionally by type)
-  update    Update the agentry CLI itself
-
-Targets:
-  agents | skills | rules | scripts   A single asset type
-  all                                  Every asset
-  <profile>                            A named profile (e.g. frontend, backend)
-
-Examples:
-  agentry add skills                   Add all skills (asks project vs global)
-  agentry add skills enhance-prompt
-  agentry add agents frontend-developer
-  agentry add rules ask-dont-guess
-  agentry add frontend                 Add the "frontend" profile
-  agentry remove skills enhance-prompt
-  agentry list
+  agentry add <type> <source> [category/name | category] [options]
+  agentry add profile <name> [source] [options]
+  agentry remove <type> [category/name | category] [options]
+  agentry list <source> [type]
   agentry update
 
+Sources:
+  author/repo        GitHub shorthand      e.g. Prat011/awesome-llm-skills
+  https://…/repo.git full git URL
+  ./path             a local directory
+
+Selectors (after the source):
+  category/name   one asset      e.g. video/downloader
+  name            one asset      (when the repo has no categories)
+  category        a whole category
+  (omitted)       list assets and pick interactively
+
+Examples:
+  agentry add skills Prat011/awesome-llm-skills                    # pick from all skills
+  agentry add skills Prat011/awesome-llm-skills video/downloader   # one skill (categorized)
+  agentry add skills Prat011/awesome-llm-skills video-downloader   # one skill (no category)
+  agentry add agents author/repo frontend                         # a whole category
+  agentry add profile frontend author/repo                        # apply profile/frontend.json
+  agentry remove skills video/downloader                          # remove installed asset
+  agentry list author/repo
+
 Options:
-  -g, --global     Install into your home (~/.cursor) for all projects
+  -g, --global     Install into ~/.cursor (all projects)
       --project    Install into the current folder (default)
       --dir <p>    Install into a specific folder
-  -y, --yes        Don't prompt; use defaults (project)
+  -y, --yes        Don't prompt; install everything matched
   -v, --version    Print version
   -h, --help       Show this help
       --uninstall  Uninstall the agentry CLI`;
@@ -69,49 +74,130 @@ function ask(question) {
   });
 }
 
+function interactive(flags) {
+  return process.stdin.isTTY && !flags.yes;
+}
+
 async function resolveTarget(flags) {
   if (flags.global) return { global: true };
   if (flags.project || flags.dir) return { global: false, dir: flags.dir };
-  if (process.stdin.isTTY && !flags.yes) {
+  if (interactive(flags)) {
     const ans = await ask('Install location — [P]roject (this folder) or [g]lobal (home)? ');
     if (/^g/i.test(ans)) return { global: true };
   }
   return { global: false };
 }
 
-function resolveAssets(target, name) {
-  if (target === 'all') return reg.allAssets();
-  if (target === 'profile') return reg.resolveProfile(name);
-  if (reg.TYPES.includes(target)) {
-    if (name) {
-      const a = reg.getAsset(target, name);
-      return a ? [a] : null;
-    }
-    return reg.listType(target);
-  }
-  if (reg.profileNames().includes(target)) return reg.resolveProfile(target);
-  return null;
+async function pick(assets) {
+  console.log('Available:');
+  assets.forEach((a, i) => {
+    const desc = (a.description || '').replace(/\s+/g, ' ').slice(0, 60);
+    console.log(`  [${i + 1}] ${a.type}/${a.id}${desc ? ' — ' + desc : ''}`);
+  });
+  const ans = await ask('Install which? (numbers comma-separated, or "all"): ');
+  if (!ans || /^all$/i.test(ans)) return assets;
+  const idx = ans
+    .split(/[, ]+/)
+    .map((s) => parseInt(s, 10) - 1)
+    .filter((n) => n >= 0 && n < assets.length);
+  return idx.map((i) => assets[i]);
 }
 
 function locationLabel(opts) {
   return opts.global ? 'globally (~/.cursor)' : `project (${cmd.targetRoot(opts)})`;
 }
 
-function printList(type) {
-  const groups = type ? { [type]: reg.listType(type) } : Object.fromEntries(reg.TYPES.map((t) => [t, reg.listType(t)]));
-  for (const [t, items] of Object.entries(groups)) {
-    console.log(`\n${t}:`);
-    if (!items.length) {
-      console.log('  (none)');
-      continue;
-    }
-    for (const it of items) {
-      const desc = (it.description || '').replace(/\s+/g, ' ').slice(0, 90);
-      console.log(`  ${it.name}${desc ? ' — ' + desc : ''}`);
-    }
+function dedupe(assets) {
+  const seen = new Set();
+  return assets.filter((a) => {
+    const key = `${a.type}/${a.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function installAll(assets, opts) {
+  if (!assets.length) {
+    console.log('Nothing matched — nothing installed.');
+    return;
   }
-  const profiles = reg.profileNames();
-  if (profiles.length) console.log(`\nprofiles:\n  ${profiles.join(', ')}`);
+  console.log(`Installing ${assets.length} item(s) ${locationLabel(opts)}:`);
+  for (const a of assets) {
+    const dest = cmd.installOne(a, opts);
+    console.log(`  + ${a.type}/${a.id} -> ${dest}`);
+  }
+  console.log('\nDone. Review assets before use; they run with full agent permissions.');
+}
+
+async function addType(type, source, selector, flags) {
+  if (!source) throw new Error(`Missing source. e.g. agentry add ${type} author/repo`);
+  const opts = await resolveTarget(flags);
+  const { root, cleanup } = src.resolveSource(source);
+  try {
+    let assets = type === 'all' ? reg.allAssets(root) : reg.select(root, type, selector);
+    if (!assets.length) throw new Error(`Nothing found for "${type}${selector ? ' ' + selector : ''}" in ${source}.`);
+    if (!selector && type !== 'all' && assets.length > 1 && interactive(flags)) assets = await pick(assets);
+    installAll(assets, opts);
+  } finally {
+    cleanup();
+  }
+}
+
+async function addProfile(name, source, flags) {
+  const { file, cfg } = prof.loadProfile(name);
+  const repo = source || cfg.repo;
+  if (!repo) throw new Error(`No source given and ${file} has no "repo". Try: agentry add profile ${name} author/repo`);
+  const opts = await resolveTarget(flags);
+  const { root, cleanup } = src.resolveSource(repo);
+  try {
+    const assets = [];
+    for (const type of reg.TYPES) {
+      for (const selector of cfg[type] || []) assets.push(...reg.select(root, type, selector));
+    }
+    installAll(dedupe(assets), opts);
+  } finally {
+    cleanup();
+  }
+}
+
+function listSource(source, type) {
+  if (!source) throw new Error('Missing source. e.g. agentry list author/repo');
+  const { root, cleanup } = src.resolveSource(source);
+  try {
+    for (const t of type ? [type] : reg.TYPES) {
+      console.log(`\n${t}:`);
+      const items = reg.listType(root, t);
+      if (!items.length) {
+        console.log('  (none)');
+        continue;
+      }
+      for (const it of items) {
+        const desc = (it.description || '').replace(/\s+/g, ' ').slice(0, 80);
+        console.log(`  ${it.id}${desc ? ' — ' + desc : ''}`);
+      }
+    }
+  } finally {
+    cleanup();
+  }
+}
+
+async function remove(type, selector, flags) {
+  const opts = await resolveTarget(flags);
+  const scope = [type, selector].filter(Boolean).join('/');
+  if (type === 'all') {
+    let count = 0;
+    for (const t of reg.TYPES) count += cmd.removeSelection(t, undefined, opts).removedKeys.length;
+    console.log(`Removed ${count} item(s) from ${locationLabel(opts)}.`);
+    return;
+  }
+  const r = cmd.removeSelection(type, selector, opts);
+  if (!r.existed && r.removedKeys.length === 0) {
+    console.log(`Nothing installed at "${scope}" in ${locationLabel(opts)}.`);
+    return;
+  }
+  for (const k of r.removedKeys) console.log(`removed ${k}`);
+  console.log(`\nRemoved ${r.removedKeys.length || 1} item(s) from ${locationLabel(opts)}.`);
 }
 
 function runUpdate() {
@@ -141,55 +227,28 @@ async function main() {
   if (flags.uninstall) return runUninstall();
   if (flags.help || positional.length === 0) return console.log(HELP);
 
-  const [action, target, name] = positional;
+  const [action] = positional;
 
-  if (action === 'list') return printList(target);
   if (action === 'update') return runUpdate();
+  if (action === 'list') return listSource(positional[1], positional[2]);
 
-  if (action !== 'add' && action !== 'remove') {
-    console.error(`Unknown action: ${action}\n\n${HELP}`);
-    process.exit(1);
+  if (action === 'add') {
+    const type = positional[1];
+    if (!type) throw new Error('Missing type. e.g. agentry add skills author/repo');
+    if (type === 'profile') return addProfile(positional[2], positional[3], flags);
+    if (type !== 'all' && !reg.TYPES.includes(type)) throw new Error(`Unknown type: ${type}`);
+    return addType(type, positional[2], positional[3], flags);
   }
-  if (!target) {
-    console.error(`Missing target for "${action}". Try: agentry ${action} skills\n\n${HELP}`);
-    process.exit(1);
-  }
-
-  const opts = await resolveTarget(flags);
 
   if (action === 'remove') {
-    const assets = resolveAssets(target, name);
-    if (assets === null && !reg.TYPES.includes(target)) {
-      console.error(`Unknown target: ${target}`);
-      process.exit(1);
-    }
-    const toRemove = assets && assets.length ? assets : name ? [{ type: target, name }] : reg.listType(target);
-    let count = 0;
-    for (const a of toRemove) {
-      if (cmd.removeOne(a.type, a.name, opts)) {
-        count++;
-        console.log(`removed ${a.type}/${a.name}`);
-      }
-    }
-    console.log(`\nRemoved ${count} item(s) from ${locationLabel(opts)}.`);
-    return;
+    const type = positional[1];
+    if (!type) throw new Error('Missing type. e.g. agentry remove skills video/downloader');
+    if (type !== 'all' && !reg.TYPES.includes(type)) throw new Error(`Unknown type: ${type}`);
+    return remove(type, positional[2], flags);
   }
 
-  const assets = resolveAssets(target, name);
-  if (!assets) {
-    console.error(`Nothing found for "${target}${name ? ' ' + name : ''}". Try: agentry list`);
-    process.exit(1);
-  }
-  if (!assets.length) {
-    console.log(`No assets to add for "${target}".`);
-    return;
-  }
-  console.log(`Installing ${assets.length} item(s) ${locationLabel(opts)}:`);
-  for (const a of assets) {
-    const dest = cmd.installOne(a, opts);
-    console.log(`  + ${a.type}/${a.name} -> ${dest}`);
-  }
-  console.log('\nDone. Review assets before use; they run with full agent permissions.');
+  console.error(`Unknown action: ${action}\n\n${HELP}`);
+  process.exit(1);
 }
 
 main().catch((err) => {
