@@ -1,6 +1,6 @@
 # agentry
 
-One CLI to install **agents, skills, rules, and scripts** into any project — or globally — for portable AI/agent tooling. No cloning, no copy‑pasting folders: run one command and `agentry` scaffolds the right files (e.g. under `.cursor/`) for you.
+A raw installer for AI/agent tooling. `agentry` fetches **agents, skills, rules, and scripts** from any Git repo (or local path) and installs the ones you pick into your project — or globally — under `.cursor/`. The CLI ships no assets of its own; you point it at a source.
 
 ## Install / run
 
@@ -10,81 +10,85 @@ npx agentry@latest --help
 
 # Or install the CLI globally
 npm install -g agentry@latest
+
+# Update / uninstall the CLI
+agentry update
+agentry --uninstall
 ```
 
-> Publishing to npm is pending; until then run it from a clone with `node bin/agentry.js …` or `npx . …`.
+> Publishing to npm is pending. Until then, run from a clone: `node bin/agentry.js …` or `npx . …`.
 
 ## Usage
 
 ```
-agentry <action> <target> [name] [options]
+agentry add <type> <source> [category/name | category] [options]
+agentry add profile <name> [source] [options]
+agentry remove <type> [category/name | category] [options]
+agentry list <source> [type]
+agentry update
 ```
+
+`<source>` is a GitHub shorthand `author/repo`, a full git URL, or a local path.
 
 ```bash
-agentry add skills                   # add all skills (asks: project or global)
-agentry add skills enhance-prompt    # add one skill
-agentry add agents frontend-developer
-agentry add rules ask-dont-guess
-agentry add frontend                 # add a whole profile (e.g. frontend / backend / all)
-agentry remove skills enhance-prompt
-agentry list                         # show available assets + profiles
-agentry update                       # update the agentry CLI itself
+agentry add skills Prat011/awesome-llm-skills                    # list all skills and pick
+agentry add skills Prat011/awesome-llm-skills video-downloader   # one skill (no category)
+agentry add skills Prat011/awesome-llm-skills document-skills/docx  # one skill (category/name)
+agentry add agents author/repo frontend                         # a whole category
+agentry add profile frontend author/repo                        # apply profile/frontend.json
+agentry remove skills document-skills/docx                      # remove an installed asset
+agentry list Prat011/awesome-llm-skills
 ```
 
-Flags: `-g, --global` (install into `~/.cursor`), `--project` (current folder, default), `--dir <path>`, `-y, --yes` (no prompts), `-v, --version`, `-h, --help`, `--uninstall`.
+Flags: `-g, --global` (into `~/.cursor`), `--project` (current folder, default), `--dir <path>`, `-y, --yes` (no prompts; install everything matched), `-v, --version`, `-h, --help`, `--uninstall`.
 
 When neither `--global` nor `--project` is given, an interactive terminal asks where to install; non‑interactive runs (agents/CI) default to the current project.
 
-## Asset types & profiles
+## How sources are discovered
 
-| Type | Folder | Ships with |
-|------|--------|------------|
-| agents | `agents/<name>/` | `frontend-developer` (starter) |
-| skills | `skills/<name>/SKILL.md` | `enhance-prompt` |
-| rules | `rules/<name>/` | `ask-dont-guess` (starter) |
-| scripts | `scripts/<name>/` | `doctor` (starter) |
+For each type, `agentry` finds assets in two ways and merges them:
 
-Profiles group assets so a project can install a curated set at once. Defined in [`profiles.json`](profiles.json): `all`, `frontend`, `backend` (extend as needed).
+1. Under an explicit folder — `<type>/<name>/` or `<type>/<category>/<name>/`.
+2. At the repo root by marker file (like `npx skills add`) — a folder with `SKILL.md` is a skill, `AGENT.md` an agent, `RULE.md` a rule. A root folder whose children carry markers becomes a category (e.g. `document-skills/docx`).
 
-Assets install to `<root>/.cursor/<type>/<name>/` (`<root>` = current folder for project, `~` for global) and are tracked in `.cursor/agentry.lock.json` for idempotent installs and clean removal.
+Selectors after the source: `category/name` (one asset), `name` (one asset when uncategorized), `category` (whole category), or omit to list-and-pick.
 
-## Layout
+Assets install to `<root>/.cursor/<type>/[category/]<name>/` and are tracked in `.cursor/agentry.lock.json` for idempotent installs and clean removal. `remove` works purely on installed files, so it needs no source.
 
-```
-agents/   <name>/                 # agent definitions
-skills/   <name>/SKILL.md         # skills (also discoverable by the `skills` CLI)
-rules/    <name>/                 # rules
-scripts/  <name>/                 # scripts
-profiles.json                     # profile → asset sets
-bin/agentry.js                    # CLI entrypoint
-src/                              # CLI logic (registry, commands)
-AGENTS.md                         # agent entrypoint for this repo
+## Profiles
+
+A profile is a plain JSON file at `profile/<name>.json` in your project. It lists selectors per type; `agentry add profile <name> <source>` fetches the source once and installs everything the profile lists.
+
+```json
+{
+  "repo": "author/repo",
+  "agents":  ["frontend"],
+  "skills":  ["prompt/enhance-prompt"],
+  "rules":   ["workflow/ask-dont-guess"]
+}
 ```
 
-Each asset lives in its own folder and may include an optional `agentry.json` (`name`, `type`, `description`). Descriptions otherwise come from `SKILL.md` / `AGENT.md` / `RULE.md` frontmatter.
+`repo` is optional — the command-line `<source>` wins when given. See [`profile/frontend.json`](profile/frontend.json) and [`profile/backend.json`](profile/backend.json).
 
-## Add a new asset
-
-1. Create `<type>/<name>/` with its content (for skills: `SKILL.md` with `name`/`description` frontmatter matching the folder).
-2. Optionally add `<type>/<name>/agentry.json` for metadata.
-3. Add the asset to any relevant profile in `profiles.json`.
-4. Verify: `node bin/agentry.js list` (and `npx skills add . --list` for skills).
-
-## Skills also work with the `skills` CLI
-
-Skills keep the `skills/<name>/SKILL.md` convention, so they remain installable via the external tool too:
+## Publish to npm (maintainers)
 
 ```bash
-npx skills add . --list
-npx skills add . --skill enhance-prompt
+# ensure package.json "name" is available (or scope it: @you/agentry)
+npm login
+npm publish --access public
+# verify
+npx agentry@latest --version
 ```
 
-## Development
+## Development / test
 
 ```bash
-npm test                 # node --test (registry + install/remove + profiles)
+npm test                 # node --test (discovery, source resolution, install/remove, profiles)
 node bin/agentry.js …    # run the CLI locally
+node bin/agentry.js list ./examples   # try it against the bundled sample source
 ```
+
+`examples/` is a sample source repo (skills/agents/rules/scripts) used by the demo — not part of the CLI. `src/` holds the logic: `registry` (discovery), `source` (fetch), `commands` (install/remove), `profile` (config).
 
 ## License
 
