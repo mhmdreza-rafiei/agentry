@@ -1,61 +1,90 @@
-# comprehensive-skills
+# agentry
 
-A portable Agent Skills package. Skills are installable folders (`skills/<name>/SKILL.md`) that coding agents load on demand.
+One CLI to install **agents, skills, rules, and scripts** into any project — or globally — for portable AI/agent tooling. No cloning, no copy‑pasting folders: run one command and `agentry` scaffolds the right files (e.g. under `.cursor/`) for you.
 
-First skill: **`enhance-prompt`** — rewrites casual or vague chat into precise, portable agent instructions without injecting workspace paths/stack; preserves contracts; can ask mode / better-decision questions; attaches related skills and an after-finish summary instruction.
-
-## Install
+## Install / run
 
 ```bash
-# All skills from this repo
-npx skills add mhmdreza-rafiei/comprehensive-skills
+# Run without installing (recommended)
+npx agentry@latest --help
 
-# One skill
-npx skills add mhmdreza-rafiei/comprehensive-skills --skill enhance-prompt
-
-# Local clone / path
-npx skills add ./path/to/comprehensive-skills --skill enhance-prompt
-
-# Global (all projects)
-npx skills add -g mhmdreza-rafiei/comprehensive-skills --skill enhance-prompt
+# Or install the CLI globally
+npm install -g agentry@latest
 ```
 
-List without installing:
+> Publishing to npm is pending; until then run it from a clone with `node bin/agentry.js …` or `npx . …`.
+
+## Usage
+
+```
+agentry <action> <target> [name] [options]
+```
 
 ```bash
-npx skills add mhmdreza-rafiei/comprehensive-skills --list
+agentry add skills                   # add all skills (asks: project or global)
+agentry add skills enhance-prompt    # add one skill
+agentry add agents frontend-developer
+agentry add rules ask-dont-guess
+agentry add frontend                 # add a whole profile (e.g. frontend / backend / all)
+agentry remove skills enhance-prompt
+agentry list                         # show available assets + profiles
+agentry update                       # update the agentry CLI itself
 ```
+
+Flags: `-g, --global` (install into `~/.cursor`), `--project` (current folder, default), `--dir <path>`, `-y, --yes` (no prompts), `-v, --version`, `-h, --help`, `--uninstall`.
+
+When neither `--global` nor `--project` is given, an interactive terminal asks where to install; non‑interactive runs (agents/CI) default to the current project.
+
+## Asset types & profiles
+
+| Type | Folder | Ships with |
+|------|--------|------------|
+| agents | `agents/<name>/` | `frontend-developer` (starter) |
+| skills | `skills/<name>/SKILL.md` | `enhance-prompt` |
+| rules | `rules/<name>/` | `ask-dont-guess` (starter) |
+| scripts | `scripts/<name>/` | `doctor` (starter) |
+
+Profiles group assets so a project can install a curated set at once. Defined in [`profiles.json`](profiles.json): `all`, `frontend`, `backend` (extend as needed).
+
+Assets install to `<root>/.cursor/<type>/<name>/` (`<root>` = current folder for project, `~` for global) and are tracked in `.cursor/agentry.lock.json` for idempotent installs and clean removal.
 
 ## Layout
 
 ```
-skills/
-  <skill-name>/
-    SKILL.md          # required — frontmatter + instructions
-    references/       # optional — templates, examples (progressive disclosure)
-    scripts/          # optional
-    assets/           # optional
-AGENTS.md             # agent entrypoint for this repo
+agents/   <name>/                 # agent definitions
+skills/   <name>/SKILL.md         # skills (also discoverable by the `skills` CLI)
+rules/    <name>/                 # rules
+scripts/  <name>/                 # scripts
+profiles.json                     # profile → asset sets
+bin/agentry.js                    # CLI entrypoint
+src/                              # CLI logic (registry, commands)
+AGENTS.md                         # agent entrypoint for this repo
 ```
 
-The `skills` CLI discovers skills one level under `skills/` (and catalog layouts under `skills/<group>/<name>/`). Keep each skill in its own folder to avoid path conflicts.
+Each asset lives in its own folder and may include an optional `agentry.json` (`name`, `type`, `description`). Descriptions otherwise come from `SKILL.md` / `AGENT.md` / `RULE.md` frontmatter.
 
-## Add a new skill
+## Add a new asset
 
-1. Create `skills/<skill-name>/SKILL.md` with YAML frontmatter (`name`, `description`). `name` must match the folder name.
-2. Keep `SKILL.md` lean; put long examples/templates in `references/`.
-3. Document the skill in this README and list it under **Project Skills** in `AGENTS.md` when it ships from this repo.
-4. Validate discovery:
+1. Create `<type>/<name>/` with its content (for skills: `SKILL.md` with `name`/`description` frontmatter matching the folder).
+2. Optionally add `<type>/<name>/agentry.json` for metadata.
+3. Add the asset to any relevant profile in `profiles.json`.
+4. Verify: `node bin/agentry.js list` (and `npx skills add . --list` for skills).
+
+## Skills also work with the `skills` CLI
+
+Skills keep the `skills/<name>/SKILL.md` convention, so they remain installable via the external tool too:
 
 ```bash
 npx skills add . --list
+npx skills add . --skill enhance-prompt
 ```
 
-Authoring helpers for writing skills are listed in `AGENTS.md` (e.g. `/skill-writer`, `/skill-creator`).
+## Development
 
-## Always-on `enhance-prompt`
-
-On demand by default. To rewrite every user message before acting, see **Always-on skills** in `AGENTS.md` and the Always-on section in `skills/enhance-prompt/SKILL.md`.
+```bash
+npm test                 # node --test (registry + install/remove + profiles)
+node bin/agentry.js …    # run the CLI locally
+```
 
 ## License
 
