@@ -4,51 +4,8 @@ import https from 'node:https';
 import { version, name as pkgName } from '../package.json' with { type: 'json' };
 import { ARTIFACT_KINDS, type ArtifactKind } from './core/types.js';
 import { cmdAdd, cmdAddProfile, cmdRemove, cmdList, cmdListInstalled, cmdUpdateAssets, type CliOpts } from './commands.js';
-import { logo, tagline, theme } from './ui/theme.js';
+import { animateLogo, theme, printHelp } from './ui/theme.js';
 import * as ui from './ui/prompts.js';
-
-const HELP = `agentry — install agents, skills, rules & profiles onto AI coding agents.
-
-Usage:
-  agentry add <kind> <source> [category/name | category] [options]
-  agentry add profile <name> [source] [options]
-  agentry remove <kind> [category/name | category] [options]
-  agentry list [source] [kind]
-  agentry update [kind] [source] [selector]
-  agentry uninstall
-
-Kinds: skill | rule | agent | profile   (or "all")
-
-Sources:
-  author/repo            GitHub shorthand
-  https://github.com/owner/repo
-  https://github.com/owner/repo/tree/<ref>/<dir>
-  https://gitlab.com/org/repo
-  git@github.com:owner/repo.git
-  ./path | /path | ~/path  local directory
-
-Examples:
-  agentry add skills Prat011/awesome-llm-skills
-  agentry add skills ./my-skills --list
-  agentry add skills ./my-skills enhance-prompt -a cursor -a claude-code
-  agentry add agents author/repo frontend-developer
-  agentry add profile frontend author/repo
-  agentry remove skills enhance-prompt
-  agentry update
-  agentry update skills author/repo enhance-prompt
-  agentry uninstall
-
-Options:
-  -g, --global     Install into ~ (all projects)
-      --project    Install into the current folder (default)
-      --dir <p>    Install into a specific folder
-  -a, --agent <n>  Target provider(s); repeatable; '*' = all. Default: auto-detect.
-  -l, --list       Preview what would be installed; write nothing
-      --copy        Copy files instead of symlinking
-      --all         Install all artifacts to all agents without prompts
-  -y, --yes        Don't prompt
-  -v, --version    Print version
-  -h, --help       Show this help`;
 
 interface ParsedArgs {
   opts: CliOpts;
@@ -130,12 +87,12 @@ async function main(): Promise<void> {
   const { opts, positional, flags } = parseArgs(process.argv.slice(2));
   if (flags.version) { ui.log(version); return; }
   if (flags.help || positional.length === 0) {
-    if (!ui.isQuiet()) { process.stdout.write(logo() + '\n'); process.stdout.write(tagline() + '\n\n'); }
-    process.stdout.write(HELP + '\n');
+    if (!ui.isQuiet()) await animateLogo();
+    printHelp();
     return;
   }
   const [action] = positional;
-  if (!ui.isQuiet()) { process.stdout.write(logo() + '\n'); process.stdout.write(tagline() + '\n\n'); }
+  if (!ui.isQuiet()) await animateLogo();
 
   if (action === 'uninstall') { runUninstall(); return; }
   if (action === 'update') {
@@ -166,7 +123,7 @@ async function main(): Promise<void> {
     await cmdRemove(kind as ArtifactKind | 'all', positional[2], opts);
     return;
   }
-  ui.err(`Unknown action: ${action}`); process.stdout.write(HELP + '\n'); process.exit(1);
+  ui.err(`Unknown action: ${action}`); printHelp(); process.exit(1);
 }
 
 main().catch((e) => { ui.err(e.message || String(e)); process.exit(1); });

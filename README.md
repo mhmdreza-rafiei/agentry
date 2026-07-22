@@ -1,6 +1,25 @@
+<div align="center">
+
+<img src="docs/agentry-logo.png" alt="agentry" width="560" />
+
 # agentry
 
-A raw installer for AI/agent tooling. `agentry` fetches **agents, skills, rules, and profiles** from any Git repo (or local path) and installs the ones you pick into your project — or globally — under each target provider's directory (`.cursor/`, `.claude/skills/`, etc.). The CLI ships no assets of its own; you point it at a source. It mirrors the clean Clack-style UX of [`vercel-labs/skills`](https://github.com/vercel-labs/skills) and extends it beyond skills-only. Supports 70+ agent providers.
+**A raw installer for AI agent tooling.**
+
+`agentry` fetches **agents, skills, rules, scripts, and profiles** from any Git repo (or local path) and installs the ones you pick into your project — or globally — under each target provider's directory (`.cursor/`, `.claude/skills/`, `.agents/skills/`, …). The CLI ships no assets of its own; you point it at a source.
+
+It mirrors the clean Clack-style UX of [`vercel-labs/skills`](https://github.com/vercel-labs/skills) and extends it beyond skills-only. Supports **70+ agent providers**.
+
+[![npm version](https://img.shields.io/npm/v/@mhmdreza-rafiei/agentry.svg?style=flat&color=cyan)](https://www.npmjs.com/package/@mhmdreza-rafiei/agentry)
+[![license](https://img.shields.io/badge/license-MIT-cyan.svg?style=flat)](#license)
+[![node](https://img.shields.io/badge/node-%3E%3D22.20-cyan.svg?style=flat)](#development--test)
+[![stars](https://img.shields.io/github/stars/mhmdreza-rafiei/agentry?style=social)](https://github.com/mhmdreza-rafiei/agentry)
+
+⭐ If agentry saves you time, [star the repo](https://github.com/mhmdreza-rafiei/agentry) — it helps others find it.
+
+</div>
+
+---
 
 ## Install / run
 
@@ -29,7 +48,7 @@ agentry update [kind] [source] [selector]
 agentry uninstall
 ```
 
-`<kind>` is `skill | rule | agent | profile` (singular; plurals like `skills` are accepted and normalized). `<source>` is a GitHub shorthand `author/repo`, a full GitHub URL, a GitHub tree subdir URL, a GitLab URL, any git URL, or a local path.
+`<kind>` is `skill | rule | agent | profile | script` (singular; plurals like `skills` are accepted and normalized). `<source>` is a GitHub shorthand `author/repo`, a full GitHub URL, a GitHub tree subdir URL, a GitLab URL, any git URL, or a local path.
 
 ```bash
 agentry add skills Prat011/awesome-llm-skills                    # list all skills and pick
@@ -39,6 +58,7 @@ agentry add skills ./my-skills --list                            # preview only,
 agentry add skills ./my-skills prompt/enhance-prompt -a cursor -a claude-code  # install to 2 providers
 agentry add agents author/repo frontend-developer               # one agent (.mdc file)
 agentry add rules author/repo ask-dont-guess                    # one rule (.mdc file)
+agentry add scripts author/repo lint                            # one script (usecase folder)
 agentry add profile frontend author/repo                        # apply profile/frontend.yaml
 agentry remove skills document-skills/docx                      # remove an installed artifact
 agentry list author/repo
@@ -48,20 +68,20 @@ agentry update skills                                           # re-install all
 agentry uninstall                                               # remove the CLI
 ```
 
-Flags: `-g, --global` (into `~`), `--project` (current folder, default), `--dir <path>`, `-a, --agent <name>` (repeatable; `*` for all; default: auto-detect installed agents), `-l, --list` (preview, no install), `--copy` (copy files instead of symlinking), `--all` (install everything to all agents, no prompts), `-y, --yes` (no prompts), `-v, --version`, `-h, --help`.
+Flags: `-g, --global` (into `~`), `--project` (current folder, default), `--dir <path>`, `-a, --agent <name>` (repeatable; `*` for all; default: prompt to choose), `-l, --list` (preview, no install), `--copy` (copy files instead of symlinking), `--all` (install everything to all agents, no prompts), `-y, --yes` (no prompts), `-v, --version`, `-h, --help`.
 
-When neither `--global` nor `--project` is given, an interactive terminal asks where to install; non-interactive runs (agents/CI) default to the current project. The interactive UI (logo, spinners, prompts) is suppressed automatically when running inside an agent or CI.
+When you run `agentry add` without `--agent`, it shows a **fetch animation** (parsing source → discovering → found N), lets you **pick artifacts** (with an `All` toggle), then prompts **"Which agents do you want to install to?"** — universal providers (`.agents/skills`) are locked in and others are selectable, defaulting to the providers you already have installed. The interactive UI (animated robot logo, spinners, prompts) is suppressed automatically when running inside an agent or CI; non-interactive runs default to the current project and auto-detected providers.
 
 ## How sources are discovered
 
 For each kind, `agentry` finds artifacts in two ways and merges them:
 
 1. Under an explicit `<kind>s/` folder (see artifact layouts below).
-2. At the repo root by marker — a folder with `SKILL.md` is a skill; a `.mdc` file at root is an agent or rule.
+2. At the repo root by marker — a folder with `SKILL.md` is a skill; a `.mdc` file at root is an agent or rule. (Scripts and profiles are folder/file kinds found only under their `scripts/` and `profiles/` folders.)
 
 Selectors after the source: `category/name` (one artifact), `name` (one artifact when uncategorized), `category` (whole category), or omit to list-and-pick.
 
-Artifacts install to the provider's directory and are tracked in `.cursor/agentry.lock.json` for idempotent installs and clean removal. `remove` works purely on installed files, so it needs no source.
+Artifacts install to the provider's directory and are tracked in `.agentry/lock.json` for idempotent installs and clean removal. `remove` works purely on installed files, so it needs no source.
 
 ## Artifact layouts (how to create installable tools)
 
@@ -120,6 +140,19 @@ rules/
 
 Same frontmatter and body shape as agents. Categorized rules: `rules/<category>/<name>.mdc`.
 
+### Scripts — folder per use case
+
+```
+scripts/
+  lint/
+    run.js            # entrypoint (any language; a folder with files = one script)
+    README.md         # optional docs
+  format/
+    run.js
+```
+
+A script is a **folder** containing its files (entrypoint, helpers, docs). Categorized scripts: `scripts/<category>/<usecase>/`.
+
 ### Profiles — single `.yaml` file (in a source repo)
 
 ```
@@ -164,25 +197,29 @@ agentry add skills ./my-skills --list
 
 `agentry` installs into 70+ agent providers, mirroring vercel-labs/skills. Each provider has a project skills directory and a global one. A few common ones:
 
-| Provider | `--agent` | Project path | Global path |
-|----------|-----------|--------------|-------------|
-| Cursor | `cursor` | `.cursor/skills/` | `~/.cursor/skills/` |
-| Claude Code | `claude-code` | `.claude/skills/` | `~/.claude/skills/` |
-| Codex | `codex` | `.agents/skills/` | `~/.codex/skills/` |
-| OpenCode | `opencode` | `.agents/skills/` | `~/.config/opencode/skills/` |
-| Gemini CLI | `gemini-cli` | `.agents/skills/` | `~/.gemini/skills/` |
-| Windsurf | `windsurf` | `.windsurf/skills/` | `~/.codeium/windsurf/skills/` |
-| Cline | `cline` | `.agents/skills/` | `~/.agents/skills/` |
-| Amp | `amp` | `.agents/skills/` | `~/.config/agents/skills/` |
-| Goose | `goose` | `.goose/skills/` | `~/.config/goose/skills/` |
-| Roo Code | `roo` | `.roo/skills/` | `~/.roo/skills/` |
-| GitHub Copilot | `github-copilot` | `.agents/skills/` | `~/.copilot/skills/` |
-| Augment | `augment` | `.augment/skills/` | `~/.augment/skills/` |
-| Continue | `continue` | `.continue/skills/` | `~/.continue/skills/` |
-| Zed | `zed` | `.agents/skills/` | `~/.agents/skills/` |
-| Warp | `warp` | `.agents/skills/` | `~/.agents/skills/` |
+| Provider       | `--agent`        | Project path        | Global path                   |
+| -------------- | ---------------- | ------------------- | ----------------------------- |
+| Cursor         | `cursor`         | `.agents/skills/`   | `~/.cursor/skills/`           |
+| Claude Code    | `claude-code`    | `.claude/skills/`   | `~/.claude/skills/`           |
+| Codex          | `codex`          | `.agents/skills/`   | `~/.codex/skills/`            |
+| OpenCode       | `opencode`       | `.agents/skills/`   | `~/.config/opencode/skills/`  |
+| Gemini CLI     | `gemini-cli`     | `.agents/skills/`   | `~/.gemini/skills/`           |
+| Windsurf       | `windsurf`       | `.windsurf/skills/` | `~/.codeium/windsurf/skills/` |
+| Cline          | `cline`          | `.agents/skills/`   | `~/.agents/skills/`           |
+| Amp            | `amp`            | `.agents/skills/`   | `~/.config/agents/skills/`    |
+| Goose          | `goose`          | `.goose/skills/`    | `~/.config/goose/skills/`     |
+| Roo Code       | `roo`            | `.roo/skills/`      | `~/.roo/skills/`              |
+| GitHub Copilot | `github-copilot` | `.agents/skills/`   | `~/.copilot/skills/`          |
+| Augment        | `augment`        | `.augment/skills/`  | `~/.augment/skills/`          |
+| Continue       | `continue`       | `.continue/skills/` | `~/.continue/skills/`         |
+| Zed            | `zed`            | `.agents/skills/`   | `~/.agents/skills/`           |
+| Warp           | `warp`           | `.agents/skills/`   | `~/.agents/skills/`           |
 
 ...and 55+ more. The CLI auto-detects installed providers; pass `--agent` to target specific ones or `--agent '*'` for all.
+
+### Universal install (`.agents/skills`)
+
+Providers whose skills directory is `.agents/skills/` (Cursor, Codex, OpenCode, Gemini CLI, Cline, Amp, Zed, Warp, GitHub Copilot, …) are **universal**: a skill is installed **once** to `.agents/skills/<id>` and every universal provider reads it from there. Non-universal providers (Claude Code, Windsurf, Goose, Roo, Augment, Continue, …) get a **symlink** from their own skills directory to the canonical `.agents/skills/<id>` copy, so a single install reaches all of them with no duplication. Use `--copy` to make independent copies instead of symlinks.
 
 ## Profiles
 
@@ -191,9 +228,9 @@ A profile is a YAML file at `profile/<name>.yaml` in your project. It bundles ar
 ```yaml
 name: frontend
 description: Frontend agents, rules, and skills
-scope: project          # project | global
+scope: project # project | global
 targets:
-  agents: [cursor, claude-code]   # target providers; '*' = all
+  agents: [cursor, claude-code] # target providers; '*' = all
 artifacts:
   skills:
     - id: prompt/enhance-prompt
@@ -201,6 +238,8 @@ artifacts:
     - id: frontend-developer
   rules:
     - id: ask-dont-guess
+  scripts:
+    - id: lint
 ```
 
 Each artifact ref may override the CLI source with its own `source:`. The command-line `<source>` is the default for refs without one.

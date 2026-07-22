@@ -1,8 +1,8 @@
 // Shared types for agentry.
-export type ArtifactKind = 'skill' | 'rule' | 'agent' | 'profile';
+export type ArtifactKind = 'skill' | 'rule' | 'agent' | 'profile' | 'script';
 export type Scope = 'global' | 'project';
 
-export const ARTIFACT_KINDS: ArtifactKind[] = ['skill', 'rule', 'agent', 'profile'];
+export const ARTIFACT_KINDS: ArtifactKind[] = ['skill', 'rule', 'agent', 'profile', 'script'];
 
 // A discovered artifact in a source root.
 export interface Artifact {
@@ -24,6 +24,8 @@ export interface AgentConfig {
   configDir: string; // project config root (derived from skillsDir minus /skills)
   globalConfigDir: string; // global config root
   detectInstalled: () => boolean;
+  showInUniversalList?: boolean;
+  showInUniversalPrompt?: boolean;
 }
 
 // Install options.

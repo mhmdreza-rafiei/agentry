@@ -21,6 +21,7 @@ export const ProfileSchema = z.object({
     skills: z.array(ProfileArtifactRefSchema).default([]),
     rules: z.array(ProfileArtifactRefSchema).default([]),
     agents: z.array(ProfileArtifactRefSchema).default([]),
+    scripts: z.array(ProfileArtifactRefSchema).default([]),
   }).default({}),
 });
 

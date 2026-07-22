@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { listKind, listAll, select } from '../src/artifacts/discovery.js';
 import { parseSource } from '../src/core/source_parser.js';
 import { resolveSource } from '../src/core/git.js';
-import { installOne, removeSelection, listInstalled } from '../src/core/lock.js';
+import { installOne, removeSelection, listInstalled, readLock, writeLock } from '../src/core/lock.js';
 import { getAgent, listAgents, resolveAgents } from '../src/registry/agents.js';
 import { ProfileSchema } from '../src/artifacts/profiles.js';
 import type { Artifact, InstallOpts, AgentConfig } from '../src/core/types.js';
@@ -106,23 +106,26 @@ describe('install / remove', () => {
     const skill = select(root, 'skill', 'prompt/enhance-prompt')[0]!;
     const skillDests = installOne(skill, opts, agentList, root);
     expect(skillDests).toHaveLength(2);
-    expect(existsSync(join(target, '.cursor', 'skills', 'prompt', 'enhance-prompt', 'SKILL.md'))).toBe(true);
+    // cursor is universal (.agents/skills) -> canonical install there.
+    expect(existsSync(join(target, '.agents', 'skills', 'prompt', 'enhance-prompt', 'SKILL.md'))).toBe(true);
+    // claude-code is non-universal -> copy of canonical into .claude/skills (opts.copy).
     expect(existsSync(join(target, '.claude', 'skills', 'prompt', 'enhance-prompt', 'SKILL.md'))).toBe(true);
 
     const agentAsset = select(root, 'agent', 'frontend-developer')[0]!;
     const agentDests = installOne(agentAsset, opts, agentList, root);
     expect(agentDests).toHaveLength(2);
-    expect(existsSync(join(target, '.cursor', 'agents', 'frontend-developer.mdc'))).toBe(true);
+    // cursor configDir is .agents (derived from .agents/skills) -> .agents/agents/<name>.mdc
+    expect(existsSync(join(target, '.agents', 'agents', 'frontend-developer.mdc'))).toBe(true);
     expect(existsSync(join(target, '.claude', 'agents', 'frontend-developer.mdc'))).toBe(true);
 
-    const lock = JSON.parse(require('node:fs').readFileSync(join(target, '.cursor', 'agentry.lock.json'), 'utf8'));
+    const lock = JSON.parse(require('node:fs').readFileSync(join(target, '.agentry', 'lock.json'), 'utf8'));
     expect(lock.items['skill/prompt/enhance-prompt']).toBeTruthy();
     expect(lock.items['agent/frontend-developer']).toBeTruthy();
     expect(lock.items['agent/frontend-developer'].source).toBe(root);
 
     const r = removeSelection('agent', 'frontend-developer', opts, agentList);
     expect(r.existed).toBe(true);
-    expect(existsSync(join(target, '.cursor', 'agents', 'frontend-developer.mdc'))).toBe(false);
+    expect(existsSync(join(target, '.agents', 'agents', 'frontend-developer.mdc'))).toBe(false);
     removeSelection('skill', 'prompt/enhance-prompt', opts, agentList);
 
     rmSync(root, { recursive: true, force: true });
@@ -139,6 +142,25 @@ describe('install / remove', () => {
     expect(dests).toHaveLength(1);
     expect(existsSync(join(target, '.cursor'))).toBe(false); // nothing written
     rmSync(root, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  });
+
+  it('reads legacy lock and migrates to .agentry/lock.json on write', () => {
+    const target = mkdtempSync(join(tmpdir(), 'agentry-tgt-'));
+    const legacy = join(target, '.cursor', 'agentry.lock.json');
+    mkdirSync(join(target, '.cursor'), { recursive: true });
+    const legacyLock = {
+      version: 1,
+      items: {
+        'skill/foo': { source: '/x', installedAt: '2020-01-01T00:00:00.000Z', agents: ['cursor'], kind: 'skill' },
+      },
+    };
+    writeFileSync(legacy, JSON.stringify(legacyLock));
+    const opts: InstallOpts = { scope: 'project', dir: target, agents: [], copy: true, dryRun: false };
+    expect(readLock(opts).items['skill/foo']).toBeTruthy();
+    writeLock(opts, readLock(opts));
+    expect(existsSync(join(target, '.agentry', 'lock.json'))).toBe(true);
+    expect(existsSync(legacy)).toBe(false);
     rmSync(target, { recursive: true, force: true });
   });
 

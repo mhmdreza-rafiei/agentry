@@ -1,12 +1,16 @@
 import { resolve } from 'node:path';
-import { ARTIFACT_KINDS, type ArtifactKind, type InstallOpts } from './core/types.js';
+import { ARTIFACT_KINDS, type ArtifactKind, type InstallOpts, type AgentConfig } from './core/types.js';
 import { resolveSource } from './core/git.js';
 import { listKind, listAll, select } from './artifacts/discovery.js';
 import { installOne, removeSelection, listInstalled } from './core/lock.js';
-import { getAgent, listAgents, detectInstalledAgents, resolveAgents } from './registry/agents.js';
+import {
+  getAgent, listAgents, detectInstalledAgents, resolveAgents,
+  getUniversalAgents, getVisibleUniversalAgents, getNonUniversalAgents,
+} from './registry/agents.js';
 import { loadProfile } from './artifacts/profiles.js';
 import * as ui from './ui/prompts.js';
 import { theme } from './ui/theme.js';
+import c from 'picocolors';
 
 export interface CliOpts {
   scope: 'global' | 'project';
@@ -20,30 +24,79 @@ export interface CliOpts {
 
 export async function cmdAdd(kind: ArtifactKind | 'all', source: string, selector: string | undefined, opts: CliOpts): Promise<void> {
   if (!source) throw new Error(`Missing source. e.g. agentry add ${kind} author/repo`);
-  const agentList = resolveAgentList(opts);
+  ui.intro();
+  await delayQuiet(180);
+  // Spinner step 1: parse source -> stops with "Source: <url>".
+  await ui.spinner('Parsing source\u2026', () => parseSourceForUi(source), (p) => {
+    const where = p.url || p.local || source;
+    return `${c.blue('Source:')} ${where}${p.ref ? c.dim(` @ ${p.ref}`) : ''}${p.subpath ? c.dim(` (${p.subpath})`) : ''}`;
+  }, 520);
+  await delayQuiet(280);
   const { root, cleanup } = resolveSource(source);
   try {
-    const artifacts = kind === 'all' ? listAll(root) : select(root, kind, selector);
-    if (!artifacts.length) throw new Error(`Nothing found for "${kind}${selector ? ' ' + selector : ''}" in ${source}.`);
-    if (opts.dryRun) { ui.preview(artifacts, agentList); return; }
+    // Spinner step 2: discover -> stops with "Found N <kind>(s)".
+    const artifacts = await ui.spinner('Discovering\u2026', () => (kind === 'all' ? listAll(root) : select(root, kind, selector)), (a) => {
+      const noun = kind === 'all' ? 'artifact' : kind;
+      return `Found ${a.length} ${noun}${a.length === 1 ? '' : 's'}`;
+    }, 620);
+    if (!artifacts.length) { ui.outro(c.red(`Nothing found for "${kind}${selector ? ' ' + selector : ''}" in ${source}.`)); return; }
+    await delayQuiet(320);
+    ui.blank();
+    if (opts.dryRun) { const agents = await resolveAgentList(opts); ui.preview(artifacts, agents); return; }
+
+    // Step 3: list with All option (visible items; All disables others).
     let chosen = artifacts;
-    if (!selector && kind !== 'all' && artifacts.length > 1 && !opts.all && !ui.isQuiet() && !opts.yes) {
-      const picks = await ui.multiselect('Install which?', artifacts.map((a) => ({ value: a.id, label: `${a.kind}/${a.id}${a.description ? ' - ' + a.description.slice(0, 50) : ''}` })));
-      if (picks.length) chosen = artifacts.filter((a) => picks.includes(a.id));
+    if (!selector && kind !== 'all' && artifacts.length > 1 && !opts.all && !opts.yes && !ui.isQuiet()) {
+      await ui.sectionTransition('source discovery', `select ${kind}s to install`);
+      const picked = await ui.selectArtifacts(`Select ${kind}s to install`, artifacts);
+      if (ui.isCancelLike(picked)) { ui.outro('Cancelled.'); return; }
+      chosen = picked as any;
+      await ui.sectionTransition(
+        `${chosen.length} ${kind}${chosen.length === 1 ? '' : 's'} selected`,
+        'choose target agents',
+      );
+    } else if (!ui.isQuiet() && !opts.agents.length && !opts.all && !opts.yes) {
+      await ui.sectionTransition(
+        `${chosen.length} ${kind}${chosen.length === 1 ? '' : 's'} ready`,
+        'choose target agents',
+      );
+    } else {
+      await delayQuiet(200);
+      ui.blank();
+    }
+
+    // Step 4: agent list with All + locked Universal.
+    const agentList = await resolveAgentList(opts);
+    if (!ui.isQuiet() && !opts.agents.length && !opts.all && !opts.yes) {
+      await ui.sectionTransition(
+        `${agentList.length} agent${agentList.length === 1 ? '' : 's'} selected`,
+        'install summary',
+      );
     }
     installAll(chosen, opts, agentList, source);
   } finally { cleanup(); }
+}
+
+async function delayQuiet(ms: number): Promise<void> {
+  if (ui.isQuiet()) return;
+  const { delay } = await import('./ui/theme.js');
+  await delay(ms);
+}
+
+// Parse source for UI display (reuses source_parser).
+function parseSourceForUi(source: string) {
+  return import('./core/source_parser.js').then((m) => m.parseSource(source));
 }
 
 export async function cmdAddProfile(name: string, source: string | undefined, opts: CliOpts): Promise<void> {
   const { file, profile } = loadProfile(name);
   const repo = source || (profile.artifacts.skills[0]?.source ?? profile.artifacts.rules[0]?.source);
   if (!repo) throw new Error(`No source given and ${file} lists none. Try: agentry add profile ${name} author/repo`);
-  const agentList = resolveAgentList(opts);
+  const agentList = await resolveAgentList(opts);
   const { root, cleanup } = resolveSource(repo);
   try {
     const artifacts = [];
-    const plural = (k: ArtifactKind): 'skills' | 'rules' | 'agents' => (k === 'skill' ? 'skills' : k === 'rule' ? 'rules' : 'agents');
+    const plural = (k: ArtifactKind): 'skills' | 'rules' | 'agents' | 'scripts' => (k === 'skill' ? 'skills' : k === 'rule' ? 'rules' : k === 'script' ? 'scripts' : 'agents');
     for (const k of ARTIFACT_KINDS) {
       if (k === 'profile') continue; // profiles are not installed as artifacts via this path
       const refs = profile.artifacts[plural(k)] ?? [];
@@ -58,26 +111,42 @@ export async function cmdAddProfile(name: string, source: string | undefined, op
   } finally { cleanup(); }
 }
 
-function resolveAgentList(opts: CliOpts) {
+async function resolveAgentList(opts: CliOpts): Promise<AgentConfig[]> {
   if (opts.all) return listAgents();
   if (opts.agents.length) {
     const { agents, unknown } = resolveAgents(opts.agents);
     if (unknown.length) throw new Error(`Unknown agent(s): ${unknown.join(', ')}. See --help for supported agents.`);
     return agents;
   }
-  const detected = detectInstalledAgents();
-  return detected.length ? detected : [getAgent('cursor')!];
+  // No --agent: auto-detect installed agents as the default selection.
+  const detected = detectInstalledAgents().map((a) => a.name);
+  const universal = getUniversalAgents();
+  const visibleUniversal = getVisibleUniversalAgents();
+  const others = getNonUniversalAgents();
+  const detectedOthers = detected.filter((n) => others.some((o) => o.name === n));
+  if (ui.isQuiet() || opts.yes) {
+    // Non-interactive: detected agents (or cursor) + universal.
+    const picked = detectedOthers.length ? detectedOthers : ['cursor'];
+    return [...universal, ...others.filter((o) => picked.includes(o.name))];
+  }
+  // Interactive: short select (All / Detected / Choose specific).
+  const selected = await ui.selectAgents(
+    'Which agents do you want to install to?',
+    visibleUniversal,
+    others,
+    detectedOthers,
+  );
+  if (ui.isCancelLike(selected)) throw new Error('Cancelled.');
+  return selected as AgentConfig[];
 }
 
 function installAll(artifacts: any[], opts: CliOpts, agentList: any[], source: string): void {
   if (!artifacts.length) { ui.warn('Nothing matched - nothing installed.'); return; }
-  const where = opts.scope === 'global' ? '~ (global)' : (opts.dir || process.cwd()) + ' (project)';
-  ui.log(`Installing ${artifacts.length} item(s) ${where} -> ${agentList.map((a) => a.name).join(', ')}:`);
+  const where = opts.scope === 'global' ? 'global (~)' : `project (${opts.dir || process.cwd()})`;
   for (const a of artifacts) {
-    const dests = installOne(a, toInstallOpts(opts), agentList, source);
-    for (const d of dests) ui.step(`${a.kind}/${a.id} -> ${d.agent}: ${d.dir}`);
+    installOne(a, toInstallOpts(opts), agentList, source);
   }
-  ui.warn('Review artifacts before use; they run with full agent permissions.');
+  ui.installSummary(artifacts, agentList, where);
 }
 
 function toInstallOpts(opts: CliOpts): InstallOpts {
@@ -85,7 +154,7 @@ function toInstallOpts(opts: CliOpts): InstallOpts {
 }
 
 export async function cmdRemove(kind: ArtifactKind | 'all', selector: string | undefined, opts: CliOpts): Promise<void> {
-  const agentList = resolveAgentList(opts);
+  const agentList = await resolveAgentList(opts);
   const installOpts = toInstallOpts(opts);
   const scope = [kind, selector].filter(Boolean).join('/');
   if (kind === 'all') {
@@ -124,7 +193,7 @@ export function cmdListInstalled(opts: CliOpts): void {
 
 export async function cmdUpdateAssets(kind: ArtifactKind | 'all', source: string | undefined, selector: string | undefined, opts: CliOpts): Promise<void> {
   const installOpts = toInstallOpts(opts);
-  const agentList = resolveAgentList(opts);
+  const agentList = await resolveAgentList(opts);
   if (source) {
     const { root, cleanup } = resolveSource(source);
     try {

@@ -1,20 +1,28 @@
 import * as clack from '@clack/prompts';
-import { theme, symbol } from './theme.js';
+import c from 'picocolors';
+import { badge, delay } from './theme.js';
 import { isCI } from './detect.js';
+import { searchMultiselect, cancelSymbol, type SearchItem, type DetailField } from './search_multiselect.js';
+import type { Artifact, AgentConfig } from '../core/types.js';
 
-// Quiet when running inside an agent or in CI (no ANSI, no logo, no spinners).
 export function isQuiet(): boolean {
   return isCI() || !process.stdout.isTTY;
 }
 
+export function isCancelLike(res: unknown): boolean {
+  return res == null || res === cancelSymbol || clack.isCancel(res as any);
+}
+
 export function intro(): void {
   if (isQuiet()) return;
-  clack.intro(theme.bold('agentry'));
-  process.stdout.write(theme.primary('\n') + '\n');
+  clack.intro(badge());
 }
 
 export function outro(message: string): void {
-  if (isQuiet()) { process.stdout.write(message + '\n'); return; }
+  if (isQuiet()) {
+    process.stdout.write(message + '\n');
+    return;
+  }
   clack.outro(message);
 }
 
@@ -25,73 +33,286 @@ export async function confirm(message: string): Promise<boolean> {
   return res as boolean;
 }
 
-export async function multiselect<T extends string>(message: string, options: { value: T; label: string; hint?: string }[]): Promise<T[]> {
-  if (isQuiet() || !options.length) return options.map((o) => o.value);
-  const res = await clack.multiselect({ message, options: options as any, required: false });
-  if (clack.isCancel(res)) return [];
-  return res as T[];
+export function log(message: string): void {
+  process.stdout.write(message + '\n');
+}
+export function blank(): void {
+  process.stdout.write('\n');
 }
 
-export async function select<T extends string>(message: string, options: { value: T; label: string }[]): Promise<T | symbol> {
-  if (isQuiet() && options.length) return options[0]!.value;
-  return await clack.select({ message, options: options as any });
-}
+/**
+ * Slow, readable handoff between UI sections so the user sees
+ * "that finished → this is next" instead of an abrupt swap.
+ */
+export async function sectionTransition(doneLabel: string, nextLabel: string): Promise<void> {
+  if (isQuiet()) return;
+  blank();
+  log(`${c.blue('◇')} ${c.dim('Done:')} ${c.bold(doneLabel)}`);
+  await delay(320);
 
-export async function spinner<T>(message: string, fn: () => T | Promise<T>): Promise<T> {
-  if (isQuiet()) {
-    process.stdout.write(theme.dim(`${symbol.bullet} ${message}...`) + '\n');
-    return await fn();
+  // Draw a short animated rail so attention moves downward.
+  const rail = ['│', '│', '↓'];
+  for (const ch of rail) {
+    process.stdout.write(`${c.dim(`  ${ch}`)}\n`);
+    await delay(140);
   }
-  const s = clack.spinner();
-  s.start(message);
+  await delay(200);
+
+  log(`${c.blue('◆')} ${c.bold('Next:')} ${nextLabel}`);
+  await delay(420);
+  blank();
+}
+export function step(message: string): void {
+  process.stdout.write(`  ${c.blue('→')} ${message}\n`);
+}
+export function ok(message: string): void {
+  process.stdout.write(`${c.blue('✓')} ${message}\n`);
+}
+export function err(message: string): void {
+  process.stdout.write(`${c.red('✗')} ${message}\n`);
+}
+export function warn(message: string): void {
+  process.stdout.write(`${c.yellow('⚠')} ${message}\n`);
+}
+export function info(message: string): void {
+  process.stdout.write(`${c.blue('ℹ')} ${message}\n`);
+}
+
+/** Blue spinner (no clack green). */
+export async function spinner<T>(
+  startMsg: string,
+  fn: () => T | Promise<T>,
+  stopWith?: (r: T) => string,
+  minMs = 480,
+): Promise<T> {
+  if (isQuiet()) {
+    process.stdout.write(c.dim(`• ${startMsg}...`) + '\n');
+    const r = await fn();
+    if (stopWith) process.stdout.write(`${c.blue('◇')} ${stopWith(r)}\n`);
+    return r;
+  }
+
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let i = 0;
+  let alive = true;
+  process.stdout.write(`${c.blue(frames[0])} ${startMsg}`);
+  const tick = setInterval(() => {
+    if (!alive) return;
+    i = (i + 1) % frames.length;
+    process.stdout.write(`\r${c.blue(frames[i]!)} ${startMsg}   `);
+  }, 80);
+
+  const started = Date.now();
   try {
     const result = await fn();
-    s.stop(theme.success(`${symbol.ok} ${message}`));
+    const wait = Math.max(0, minMs - (Date.now() - started));
+    if (wait) await delay(wait);
+    alive = false;
+    clearInterval(tick);
+    const msg = stopWith ? stopWith(result) : startMsg;
+    process.stdout.write(`\r\x1b[K${c.blue('◇')} ${msg}\n`);
     return result;
   } catch (e) {
-    s.stop(theme.error(`${symbol.fail} ${message}`));
+    alive = false;
+    clearInterval(tick);
+    process.stdout.write(`\r\x1b[K${c.red('■')} ${startMsg}\n`);
     throw e;
   }
 }
 
-export function log(message: string): void {
-  process.stdout.write(message + '\n');
+function artifactFields(a: Artifact): DetailField[] {
+  return [
+    { label: 'Name', value: a.name },
+    { label: 'Kind', value: a.kind },
+    { label: 'Id', value: a.id },
+    {
+      label: 'About',
+      value: a.description ? a.description.replace(/\s+/g, ' ').trim() : 'No description provided.',
+    },
+    { label: 'Path', value: a.dir },
+  ];
 }
 
-export function step(message: string): void {
-  process.stdout.write(`  ${theme.dim(symbol.arrow)} ${message}\n`);
+function agentFields(a: AgentConfig, installed: boolean): DetailField[] {
+  return [
+    { label: 'Name', value: a.displayName },
+    { label: 'Id', value: a.name },
+    { label: 'Project', value: a.skillsDir },
+    { label: 'Global', value: a.globalSkillsDir || '—' },
+    {
+      label: 'About',
+      value: [
+        a.skillsDir === '.agents/skills' ? 'Universal provider (.agents/skills).' : 'Provider-specific install path.',
+        installed ? 'Detected on this machine.' : 'Not detected on this machine.',
+        a.globalSkillsDir ? `Global skills: ${a.globalSkillsDir}` : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    },
+  ];
 }
 
-export function ok(message: string): void {
-  process.stdout.write(`${theme.success(symbol.ok + ' ' + message)}\n`);
+/**
+ * Always show the full skill/artifact list with an All row.
+ * Selecting All disables every other row.
+ */
+export async function selectArtifacts(
+  message: string,
+  artifacts: Artifact[],
+): Promise<Artifact[] | null> {
+  if (isQuiet() || artifacts.length <= 1) return artifacts;
+
+  blank();
+  const items: SearchItem<string>[] = artifacts.map((a) => ({
+    value: a.id,
+    label: a.id,
+    hint: a.description ? a.description.replace(/\s+/g, ' ').slice(0, 42) : a.kind,
+    fields: artifactFields(a),
+  }));
+
+  const res = await searchMultiselect({
+    message,
+    items,
+    maxVisible: 8,
+    required: true,
+    searchable: true,
+    showDetail: true,
+    detailLines: 8,
+    showSelectedSummary: true,
+    includeAllOption: true,
+    allLabel: `All (${artifacts.length})`,
+    allHint: 'every skill below · disables others',
+  });
+  if (res === cancelSymbol) return null;
+  blank();
+  const ids = new Set(res as string[]);
+  return artifacts.filter((a) => ids.has(a.id));
 }
 
-export function err(message: string): void {
-  process.stdout.write(`${theme.error(symbol.fail + ' ' + message)}\n`);
-}
+/**
+ * Show agent list with All + locked Universal. No opaque All/Detected/Choose radio.
+ */
+export async function selectAgents(
+  message: string,
+  universal: AgentConfig[],
+  others: AgentConfig[],
+  detectedNames: string[] = [],
+): Promise<AgentConfig[] | null> {
+  const seen = new Set<string>();
+  const uniqueOthers = others.filter((o) => {
+    if (seen.has(o.name)) return false;
+    seen.add(o.name);
+    return true;
+  });
 
-export function warn(message: string): void {
-  process.stdout.write(`${theme.warn(symbol.warn + ' ' + message)}\n`);
-}
+  const detected = uniqueOthers.filter((o) => detectedNames.includes(o.name));
+  if (isQuiet()) return [...universal, ...detected];
+  if (!uniqueOthers.length) return universal;
 
-export function info(message: string): void {
-  process.stdout.write(`${theme.info(symbol.info + ' ' + message)}\n`);
-}
+  blank();
+  const installedSet = new Set(detectedNames);
+  const items: SearchItem<string>[] = uniqueOthers.map((a) => ({
+    value: a.name,
+    label: a.displayName,
+    hint: installedSet.has(a.name) ? `${a.skillsDir} · detected` : a.skillsDir,
+    fields: agentFields(a, installedSet.has(a.name)),
+  }));
 
-// Preview what would be installed (dry-run output).
-export function preview(artifacts: { kind: string; id: string; description?: string }[], agents: { name: string; displayName: string }[]): void {
-  log(theme.bold('Preview') + theme.dim(' (no files will be written)'));
-  if (agents.length) {
-    log(theme.info('Targets:'));
-    for (const a of agents) step(`${a.name} (${a.displayName})`);
+  const locked =
+    universal.length > 0
+      ? {
+          title: 'Universal',
+          items: universal.slice(0, 6).map((a) => ({
+            value: a.name,
+            label: a.displayName,
+            fields: agentFields(a, true),
+          })),
+          hiddenCount: Math.max(0, universal.length - 6),
+        }
+      : undefined;
+
+  // Pre-select detected (visible in the list) — not All.
+  const res = await searchMultiselect({
+    message,
+    items,
+    maxVisible: 8,
+    required: false,
+    initialSelected: detected.map((d) => d.name),
+    lockedSection: locked,
+    searchable: true,
+    showDetail: true,
+    detailLines: 8,
+    showSelectedSummary: true,
+    includeAllOption: true,
+    allLabel: `All additional (${uniqueOthers.length})`,
+    allHint: 'every provider below · disables others',
+  });
+  if (res === cancelSymbol) return null;
+  blank();
+
+  const picked = new Set(res as string[]);
+  const byName = new Map([...universal, ...uniqueOthers].map((a) => [a.name, a]));
+  const out: AgentConfig[] = [];
+  for (const name of picked) {
+    const a = byName.get(name);
+    if (a) out.push(a);
   }
-  if (artifacts.length) {
-    log(theme.info('Artifacts:'));
-    for (const a of artifacts) {
-      const desc = (a.description || '').replace(/\s+/g, ' ').slice(0, 60);
-      step(`${a.kind}/${a.id}${desc ? theme.dim(' - ' + desc) : ''}`);
-    }
-  } else {
-    log(theme.dim('  (no artifacts matched)'));
+  for (const u of universal) {
+    if (!out.some((a) => a.name === u.name)) out.unshift(u);
   }
+  return out;
+}
+
+/** Clean install summary panel (title · targets · artifact list). */
+export function installSummary(
+  artifacts: Artifact[],
+  agents: AgentConfig[],
+  scopeLabel: string,
+): void {
+  blank();
+  const bar = c.dim('│');
+  const corner = c.dim('└');
+  log(`${c.blue('◆')} ${c.bold('Install summary')}`);
+  log(bar);
+  log(`${bar}  ${c.blue('Scope')}      ${scopeLabel}`);
+  const universalCount = agents.filter((a) => a.skillsDir === '.agents/skills').length;
+  const otherCount = agents.length - universalCount;
+  log(
+    `${bar}  ${c.blue('Targets')}    ${agents.length} agent${agents.length === 1 ? '' : 's'}` +
+      c.dim(` · ${universalCount} universal` + (otherCount ? ` · ${otherCount} additional` : '')),
+  );
+  // Short name list — wrap-friendly, not one giant line.
+  const names = agents.map((a) => a.displayName);
+  const chunks: string[] = [];
+  let line = '';
+  for (const n of names) {
+    const next = line ? `${line}, ${n}` : n;
+    if (next.length > 56) {
+      if (line) chunks.push(line);
+      line = n;
+    } else line = next;
+  }
+  if (line) chunks.push(line);
+  for (const ch of chunks.slice(0, 3)) log(`${bar}             ${c.dim(ch)}`);
+  if (chunks.length > 3) log(`${bar}             ${c.dim(`… +${chunks.length - 3} more lines`)}`);
+
+  log(bar);
+  log(`${bar}  ${c.bold('Artifacts')}  ${artifacts.length} selected`);
+  log(bar);
+  for (const a of artifacts) {
+    const desc = (a.description || '').replace(/\s+/g, ' ').trim().slice(0, 52);
+    log(`${bar}  ${c.blue('•')} ${c.bold(`${a.kind}/${a.id}`)}`);
+    if (desc) log(`${bar}    ${c.dim(desc)}`);
+  }
+  log(bar);
+  log(`${corner}  ${c.dim('Review before use — artifacts run with full agent permissions.')}`);
+  blank();
+}
+
+export function preview(artifacts: Artifact[], agents: AgentConfig[]): void {
+  installSummary(
+    artifacts,
+    agents,
+    'preview (dry-run)',
+  );
 }

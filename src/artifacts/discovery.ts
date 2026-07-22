@@ -14,7 +14,7 @@ import type { Artifact, ArtifactKind } from '../core/types.js';
 const SKILL_MARKER = 'SKILL.md';
 const FILE_EXT = '.mdc';
 const PROFILE_EXTS = ['.yaml', '.yml'];
-const KIND_DIRS: Record<ArtifactKind, string> = { skill: 'skills', rule: 'rules', agent: 'agents', profile: 'profiles' };
+const KIND_DIRS: Record<ArtifactKind, string> = { skill: 'skills', rule: 'rules', agent: 'agents', profile: 'profiles', script: 'scripts' };
 const ROOT_SKIP = new Set(['.', 'node_modules', 'skills', 'rules', 'agents', 'profiles', 'scripts']);
 
 function entries(dir: string) {
@@ -120,6 +120,25 @@ function collectProfiles(base: string, out: Artifact[]) {
   }
 }
 
+// scripts: folder per usecase (flat or one category deep)
+function collectScripts(base: string, out: Artifact[]) {
+  for (const child of entries(base)) {
+    if (!child.isDirectory()) continue;
+    const childDir = join(base, child.name);
+    // a usecase folder: has files directly (run.js/README.md/...) -> it's a script
+    const hasFiles = entries(childDir).some((e) => e.isFile());
+    if (hasFiles) {
+      out.push(makeArtifact('script', null, child.name, childDir, false));
+    } else {
+      for (const item of entries(childDir)) {
+        if (item.isDirectory() && entries(join(childDir, item.name)).some((e) => e.isFile())) {
+          out.push(makeArtifact('script', child.name, item.name, join(childDir, item.name), false));
+        }
+      }
+    }
+  }
+}
+
 // root marker mode
 function collectRootSkills(root: string, out: Artifact[]) {
   for (const child of entries(root)) {
@@ -158,6 +177,7 @@ export function listKind(root: string, kind: ArtifactKind): Artifact[] {
   if (existsSync(base)) {
     if (kind === 'skill') collectSkills(base, out);
     else if (kind === 'profile') collectProfiles(base, out);
+    else if (kind === 'script') collectScripts(base, out);
     else collectMdc(kind, base, out); // agents, rules
   }
   if (kind === 'skill') collectRootSkills(root, out);
