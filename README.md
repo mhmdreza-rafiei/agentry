@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="docs/agentry-logo.png" alt="agentry" width="560" />
-
-# agentry
+<img src="docs/agentry-logo.png" alt="agentry" width="800" />
 
 **A raw installer for AI agent tooling.**
 
