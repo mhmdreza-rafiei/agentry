@@ -1,34 +1,53 @@
 {
   "name": "@mhmdreza-rafiei/agentry",
-  "version": "0.1.0",
-  "description": "One CLI to install agents, skills, rules, and scripts into any project or globally — portable AI/agent tooling.",
+  "version": "0.2.0",
+  "description": "One CLI to install agents, skills, rules, and profiles onto AI coding agents — portable AI/agent tooling.",
+  "type": "module",
   "bin": {
-    "agentry": "bin/agentry.js"
+    "agentry": "./dist/cli.mjs"
   },
   "files": [
-    "bin",
-    "src",
-    "profile",
-    "examples",
+    "dist",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "agentry": "node bin/agentry.js",
-    "test": "node --test"
+    "dev": "tsx src/cli.ts",
+    "build": "obuild",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.20.0"
   },
   "keywords": [
     "ai",
     "agents",
     "skills",
     "rules",
+    "profiles",
     "cli",
     "cursor",
+    "claude-code",
+    "codex",
     "agentic",
     "scaffold"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^0.7.0",
+    "@vercel/detect-agent": "^1.2.1",
+    "picocolors": "^1.1.1",
+    "xdg-basedir": "^5.1.0",
+    "yaml": "^2.8.3",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "obuild": "^0.4.22",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.0"
+  }
 }

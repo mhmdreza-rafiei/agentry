@@ -1,51 +1,93 @@
 # Agent entrypoint — agentry
 
-`agentry` is a **raw installer**: a zero-dependency Node CLI that fetches **agents, skills, rules, and scripts** from any Git repo (or local path) and installs the selected ones into a project (or globally) under `.cursor/`. The CLI ships no assets of its own — you point it at a source. Prefer progressive disclosure in assets: lean `SKILL.md` / `AGENT.md` / `RULE.md`, details in `references/`.
+`agentry` is a **raw installer**: a TypeScript ESM Node CLI that fetches **agents, skills, rules, and profiles** from any Git repo (or local path) and installs the selected ones into a project (or globally) under the target provider's directory (`.cursor/`, `.claude/skills/`, etc.). It mirrors the clean Clack-style UX of `vercel-labs/skills` and extends it beyond skills-only. The CLI ships no assets of its own — you point it at a source. Prefer progressive disclosure in assets: lean `SKILL.md` / `.mdc`, details in `references/`.
 
 ## How it works
 
-- `agentry add <type> <source> [selector]` — fetch a source (`author/repo`, git URL, or local path) and install matching assets. Omit the selector to list-and-pick (like `npx skills add`).
-- `agentry add profile <name> [source]` — read `profile/<name>.json` (per-type selector lists) and install everything it lists from the source.
-- `agentry remove <type> [selector]` / `agentry list <source> [type]` / `agentry update`.
+- `agentry add <kind> <source> [selector]` — fetch a source (`author/repo`, git URL, GitHub tree URL, GitLab URL, or local path) and install matching artifacts. Omit the selector to list-and-pick. Use `--agent cursor --agent claude-code` to target specific providers (or `--agent '*'` for all). Kinds are singular (`skill | rule | agent | profile`); plurals are accepted and normalized.
+- `agentry add profile <name> [source]` — read `profile/<name>.yaml` (a bundled install config: artifacts + targets + scope) and install everything it lists from the source (or per-artifact `source` overrides).
+- `agentry remove <kind> [selector]` / `agentry list [source] [kind]` / `agentry update [kind] [source] [selector]` / `agentry uninstall`.
 - Selectors: `category/name`, `name` (uncategorized), or `category` (whole category).
 
-Discovery finds assets both under an explicit `<type>/` folder (`<type>/<name>/` or `<type>/<category>/<name>/`) and at the **repo root by marker file** (`SKILL.md`→skills, `AGENT.md`→agents, `RULE.md`→rules), so it works against real-world skill repos where each skill sits at the root. See `README.md` for the full command grammar.
+Artifact layouts in a source repo:
+- **skill** — folder per skill: `skills/<name>/SKILL.md` (or `skills/<category>/<name>/SKILL.md`).
+- **agent** — single `.mdc` file: `agents/<name>.mdc` (or `agents/<category>/<name>.mdc`).
+- **rule** — single `.mdc` file: `rules/<name>.mdc` (or `rules/<category>/<name>.mdc`).
+- **profile** — single `.yaml`/`.yml` file: `profiles/<name>.yaml` (or `profiles/<category>/<name>.yaml`).
 
-`examples/` is a sample source repo (not part of the CLI) used by the demo and tests: it contains `enhance-prompt` (skill), `frontend-developer` (agent), `ask-dont-guess` (rule), `doctor` (script). `profile/*.json` are example profiles.
+Discovery is dual-mode: it finds artifacts under an explicit `<kind>s/` folder **and** at the repo root by marker (`SKILL.md` for skills, `.mdc` files for agents/rules), so generic repos work. See `README.md` for the full command grammar.
 
-## Skill-authoring toolkit
+## Context
 
-Use these when creating or refining skills. Install from their upstream packages if not already available.
+```
+context\
+   README.md         — entry point + how this folder works.   When to read: first, once.
+   overview.md       — what the project is and is not.         When to read: scoping work.
+   architecture.md   — systems, boundaries, rules.             When to read: before any code.
+   standards.md      — how code is written here.               When to read: before writing.
+   plan.md           — what to build, setup, roadmap.          When to read: before a feature.
+   libraries.md      — deps and how to use them.               When to read: using a dependency.
+   memory\
+      progress.md    — current state + handoff.                When to read: session start/end.
+```
 
-| Skill | Role |
-|-------|------|
-| `/skill-writer` | Create, synthesize, and iteratively improve skills (spec-aligned authoring) |
-| `/skill-optimizer` | Benchmark and refine skill docs / descriptions until agents trigger and execute reliably |
-| `/skill-creator-ms` | Create modular skills (Azure / Foundry–oriented creator workflow) |
-| `/skill-creator` | Create, edit, eval, and optimize skills end-to-end |
-| `/skill-issue` | Diagnose why a skill fails to fire; grade metadata and find collisions |
-| `/skill-check` | Lint / validate `SKILL.md` against the Agent Skills spec |
+## Rules you must always follow!
 
-## Skills: when-to-use vs always-use
+1. Read `context/` before building — start with `overview.md` and `architecture.md`.
+2. TypeScript ESM, Node >=22.20. Runtime deps are intentional and minimal (`@clack/prompts`, `picocolors`, `yaml`, `zod`, `xdg-basedir`, `@vercel/detect-agent`); UI libs are bundled by `obuild` into `dist/`. No new dep without explicit approval.
+3. Keep discovery dual-mode (explicit `<kind>s/` folder **and** repo-root marker files) — that is what makes generic skill repos work.
+4. Install/remove are idempotent; `remove` works from the lockfile/filesystem and needs no source.
+5. No hardcoded paths in any asset or template.
+6. Tests build a throwaway fixture source in a temp dir — they do not hit the network.
+7. Use the UI helpers (`src/ui/prompts.ts`, `src/ui/theme.ts`) for all CLI output — no raw `console.log` for success/error/warn. Suppress interactive UI (logo, spinners, prompts) when running inside an agent or CI (`src/ui/detect.ts`).
 
-- **When-to-use** — Agent loads the skill only when the user request matches the skill `description` (or the user invokes it by name / slash command).
-- **Always-use** — Skill applies to every user turn until disabled. Register with frontmatter such as `alwaysApply: true`.
+## Skills
 
-To enable always-on `enhance-prompt`: install it (`agentry add skills <source> prompt/enhance-prompt`), then in the target project's `AGENTS.md` mark it `alwaysApply: true` (or set equivalent metadata in the agent's skill config). Disable by removing that registration.
+1. `/groundwork` — create and continuously improve this context system. When to use: setting up the project, or refreshing/deepening context.
+2. `/enhance-prompt` — rewrite a user message into a precise, portable agent prompt. When to use: before acting on a complex or dense user request.
+3. `/architect` — think through a change and write a plan into `context/plan.md`. When to use: before building any feature or refactor.
+
+## References
+
+- **vercel-labs/skills** — the reference CLI for UX/provider parity. README: https://github.com/vercel-labs/skills . Source: `src/agents.ts` (provider registry), `src/source-parser.ts` (source formats), `src/cli.ts` (UI).
+- **Agent Skills spec** — `SKILL.md` with YAML frontmatter (`name`, `description`). Used by Cursor, Claude Code, Codex, OpenCode, and 70+ others.
+- **Prat011/awesome-llm-skills** — real-world skill repo used to verify dual-mode discovery.
+
+## Build
+
+```powershell
+# Run the CLI in dev (tsx, no build needed)
+npm run dev -- <action> …
+
+# Build the bundled CLI (obuild -> dist/cli.mjs)
+npm run build
+
+# Run the built CLI
+node dist/cli.mjs <action> …
+
+# Typecheck
+npm run typecheck
+
+# Tests (vitest; hermetic, no network)
+npm test
+```
+
+Published entry will be `npx agentry@latest …`. Publishing to npm and the GitHub repo rename/description are external user steps.
 
 ## Repo conventions
 
-- The CLI lives in `bin/` + `src/` (`registry` discovery, `source` fetch, `commands` install/remove, `profile` config). Zero runtime dependencies.
-- Sample assets live in `examples/<type>/[category/]<name>/`; keep skills discoverable via `SKILL.md`.
+- The CLI lives in `src/` (`cli.ts` router, `commands.ts` handlers, `core/` types+source-parser+git+lock, `registry/agents.ts` provider registry, `artifacts/` discovery+profiles, `ui/` theme+prompts+detect). Bundled by `obuild` to `dist/cli.mjs`; bin shim is `bin/cli.mjs`.
+- Artifact layouts: skill = `skills/<name>/SKILL.md`; agent = `agents/<name>.mdc`; rule = `rules/<name>.mdc`; profile = `profiles/<name>.yaml`. Local profile configs live at `profile/<name>.yaml`.
 - No hardcoded authoring-machine paths in any asset or template.
 
 ## Cursor Cloud specific instructions
 
-Two things live here: the **`agentry` CLI** (Node, zero runtime deps) and a **sample source** in `examples/`. No long-running service.
+Two things live here: the **`agentry` CLI** (Node, TypeScript ESM). No long-running service.
 
-- Run the CLI: `node bin/agentry.js <action> …` (or `npx . …`); published entry will be `npx agentry@latest …`.
-- Tests: `npm test` (Node built-in runner, `node --test`, sources in `test/`). Tests build a throwaway fixture source in a temp dir — they do not hit the network. No lint tooling is configured.
+- Run the CLI: `node dist/cli.mjs <action> …` (built) or `npm run dev -- <action> …` (dev via tsx); published entry will be `npx agentry@latest …`.
+- Tests: `npm test` (vitest, sources in `tests/`). Tests build a throwaway fixture source in a temp dir — they do not hit the network. No lint tooling is configured.
 - Remote sources are fetched with a shallow `git clone` to a temp dir (cleaned up after); `author/repo` expands to `https://github.com/author/repo.git`. Fetching a remote source needs network + `git`.
-- Discovery is dual-mode (explicit `<type>/` folder **and** root-level marker files) — this is why it works against generic skill repos like `Prat011/awesome-llm-skills`; keep that in mind when changing `src/registry.js`.
-- Install target is always `<root>/.cursor/<type>/[category/]<name>/` (cwd for project, `~` for global) with `.cursor/agentry.lock.json`. `add`/`remove` are idempotent; `remove` works from the lockfile/filesystem and needs no source. On a TTY with no location flag it prompts; non-interactively it defaults to a **project** install (agent/CI-safe).
+- Discovery is dual-mode (explicit `<kind>s/` folder **and** root-level marker files) — this is why it works against generic skill repos like `Prat011/awesome-llm-skills`; keep that in mind when changing `src/artifacts/discovery.ts`.
+- Install target is the provider's directory (`.cursor/`, `.claude/skills/`, etc.); provider list lives in `src/registry/agents.ts` (70+ agents, mirroring vercel-labs/skills). `add`/`remove` are idempotent; `remove` works from the lockfile/filesystem and needs no source. On a TTY with no `--agent` flag it auto-detects installed agents and prompts; non-interactively (or inside an agent/CI) it defaults to `cursor`.
+- `agentry update` (no args) checks the npm registry version first and prints "Already up to date" if equal; otherwise runs `npm install -g <pkg>@latest`. `agentry update <kind> <source> [selector]` re-fetches and re-installs specific artifacts; `agentry update <kind>` (no source) re-installs from sources recorded in the lockfile. `agentry uninstall` removes the CLI.
 - Publishing to npm and the GitHub repo rename/description are external user steps.

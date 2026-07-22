@@ -1,13 +1,68 @@
-# Overview
+Overview
+-----------------
+`agentry` is a raw installer CLI for AI/agent tooling. It fetches **agents, skills, rules, and profiles** from any Git repo (or local path) and installs the selected ones into a project (or globally). The CLI ships no assets of its own — you point it at a source. It mirrors the clean Clack-style UX of `vercel-labs/skills` and extends it beyond skills-only.
 
-`agentry` is a raw installer CLI for AI/agent tooling. It fetches assets from any source and installs the selected ones under `.cursor/`. The CLI bundles no assets.
+## About
 
-- **CLI** (`bin/agentry.js`): `add` / `remove` / `list` / `update`; flags for global vs project install, plus `--version` / `--help` / `--uninstall`. Zero runtime dependencies.
-- **Sources** (`src/source.js`): a local path (used as-is), a GitHub `author/repo` shorthand, or a full git URL (shallow-cloned to temp).
-- **Discovery** (`src/registry.js`): finds assets under `<type>/[category/]<name>/` **and** at the repo root by marker file (`SKILL.md`/`AGENT.md`/`RULE.md`), so generic skill repos work. Assets are addressed `category/name`, `name`, or `category`.
-- **Install/remove** (`src/commands.js`): copy to `<root>/.cursor/<type>/[category/]<name>/`, tracked in `.cursor/agentry.lock.json` (idempotent; remove works from the lockfile/filesystem, no source needed).
-- **Profiles** (`src/profile.js` + `profile/<name>.json`): per-type selector lists applied against a source.
+- One CLI, TypeScript ESM, Node >=22.20. Minimal runtime deps (`@clack/prompts`, `picocolors`, `yaml`, `zod`, `xdg-basedir`, `@vercel/detect-agent`); UI libs bundled by `obuild` into `dist/`.
+- Sources: local path, GitHub `author/repo` shorthand, full GitHub URL, GitHub tree subdir URL, GitLab URL, or any git URL (shallow-cloned to temp).
+- Discovery is dual-mode: explicit `<kind>s/[category/]<name>/` folders **and** repo-root marker files (`SKILL.md` / `.mdc`), so generic skill repos work.
+- Install target is the provider's directory (project or global), tracked in `.cursor/agentry.lock.json`. Idempotent; `remove` works from the lockfile/filesystem and needs no source.
+- Artifact kinds: `skill | rule | agent | profile` (singular; plurals accepted).
 
-`examples/` is a sample source (skills/agents/rules/scripts) used by the demo/tests, not part of the CLI.
+## Problem
 
-Run: `node bin/agentry.js <action> …` (published: `npx agentry@latest …`). Test: `npm test`.
+Existing agent/skill tooling is fragmented across providers (Cursor, Claude Code, Codex, OpenCode, …). Each provider has its own install layout. `agentry` aims to be one portable installer that fetches from any source and installs into any provider's directory.
+
+## Does
+
+- Fetch artifacts from a Git source or local path.
+- Discover artifacts by folder convention or root marker file (dual-mode).
+- Install selected artifacts into the target provider directory, idempotently (symlink default, `--copy` available).
+- Remove installed artifacts without needing the source.
+- Apply profiles (bundled artifact + target + scope configs) against a source.
+- Auto-detect installed providers; target specific ones with `--agent`; preview with `--list`.
+- Suppress interactive UI automatically when running inside an agent or CI.
+
+## Does not
+
+- Bundle any artifacts of its own.
+- Run agents or skills — it only installs files.
+- (Yet) ship `doctor`, `find`, `use`, `init`, or per-provider rules adapters beyond install paths — see plan.md.
+
+## User flow
+
+1. User runs `agentry add <kind> <source> [selector]`.
+2. CLI resolves the source (local path used as-is; remote shallow-cloned to temp).
+3. CLI discovers matching artifacts (folder convention + root markers, unioned).
+4. If no selector and multiple matches on a TTY, prompts the user to pick.
+5. CLI installs each selected artifact into the provider's directory and records it in the lockfile.
+
+## Target users
+
+- Developers using AI coding agents who want to install community skills/agents/rules.
+- Skill/agent authors who want a portable installer for their repo.
+- CI/agent runs that need non-interactive installs.
+
+## Success criteria
+
+- `npm test` passes (vitest, no network).
+- `node dist/cli.mjs <action>` works for add/remove/list/update against local and remote sources.
+- Installs are idempotent; removes are source-free.
+- Dual-mode discovery works against real-world skill repos (verified against `Prat011/awesome-llm-skills`).
+
+## Rules
+
+- TypeScript ESM, Node >=22.20. Minimal intentional runtime deps; no new dep without explicit approval.
+- No hardcoded paths in any asset or template.
+- Discovery must stay dual-mode (folder + root marker) — that is what makes generic skill repos work.
+- Install/remove are idempotent; remove is source-free.
+- Tests build a throwaway fixture source in a temp dir — they do not hit the network.
+
+## Relations
+
+- architecture.md [ Context ] — systems, boundaries, folder structure.
+- standards.md [ Context ] — code style and conventions.
+- plan.md [ Context ] — roadmap (rules adapters, doctor, find/use/init).
+- libraries.md [ Context ] — dependencies and tooling.
+- memory/progress.md [ Memory ] — current state + handoff.

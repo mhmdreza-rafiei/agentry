@@ -6,3 +6,5 @@ skills-lock.json
 .cursor/skills/
 .claude/skills/
 .codex/skills/
+dist/
+package-lock.json
