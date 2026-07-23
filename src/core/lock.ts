@@ -171,7 +171,8 @@ export function installOne(
     const canonical = join(base, '.agents', 'skills', artifact.id);
     rmSync(canonical, { recursive: true, force: true });
     mkdirSync(join(canonical, '..'), { recursive: true });
-    cpSync(artifact.dir, canonical, { recursive: true });
+    // dereference: untrusted source trees may plant symlinks that escape the clone.
+    cpSync(artifact.dir, canonical, { recursive: true, dereference: true });
     for (const a of list) {
       if (a.skillsDir === '.agents/skills') {
         dests.push({ agent: a.name, dir: canonical });
@@ -180,11 +181,11 @@ export function installOne(
         rmSync(dir, { recursive: true, force: true });
         mkdirSync(join(dir, '..'), { recursive: true });
         if (opts.copy) {
-          cpSync(canonical, dir, { recursive: true });
+          cpSync(canonical, dir, { recursive: true, dereference: true });
           dests.push({ agent: a.name, dir });
         } else {
           try { symlinkSync(canonical, dir, 'junction' as any); dests.push({ agent: a.name, dir, symlinked: true }); }
-          catch { cpSync(canonical, dir, { recursive: true }); dests.push({ agent: a.name, dir }); }
+          catch { cpSync(canonical, dir, { recursive: true, dereference: true }); dests.push({ agent: a.name, dir }); }
         }
       }
     }
@@ -194,7 +195,7 @@ export function installOne(
       const dir = agentDir(artifact, a, base);
       rmSync(dir, { recursive: true, force: true });
       mkdirSync(join(dir, '..'), { recursive: true });
-      cpSync(artifact.dir, dir, { recursive: true });
+      cpSync(artifact.dir, dir, { recursive: true, dereference: true });
       dests.push({ agent: a.name, dir });
     }
   }

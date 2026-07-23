@@ -2,9 +2,9 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync, mkdirSync, cpSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { xdgCache } from 'xdg-basedir';
-import { parseSource, sourceIdentity, type ParsedSource } from './source_parser.js';
+import { parseSource, sourceIdentity, redactUrl, type ParsedSource } from './source_parser.js';
 
 export interface ResolvedSource {
   root: string;
@@ -48,23 +48,47 @@ function saveToCache(parsed: ParsedSource, clonedRoot: string): void {
   }
 }
 
+const SAFE_REF = /^[a-zA-Z0-9][\w./-]*$/;
+
 function cloneTo(url: string, dest: string, ref?: string): void {
+  if (ref && !SAFE_REF.test(ref)) throw new Error(`Invalid git ref: "${ref}"`);
   const refArgs = ref ? ['--branch', ref, '--depth', '1'] : ['--depth', '1'];
   execFileSync('git', ['clone', '--quiet', ...refArgs, url, dest], {
     stdio: ['ignore', 'ignore', 'pipe'],
   });
 }
 
-function withSubpath(root: string, subpath: string, cleanupRoot: string): ResolvedSource {
-  if (!subpath) {
-    return { root, cleanup: () => rmSync(cleanupRoot, { recursive: true, force: true }) };
+/** Ensure `candidate` resolves inside `root` (blocks `..` / absolute escapes). */
+export function assertInsideRoot(root: string, candidate: string): string {
+  const base = resolve(root);
+  const resolved = resolve(candidate);
+  const prefix = base.endsWith(sep) ? base : base + sep;
+  const a = resolved.toLowerCase();
+  const b = base.toLowerCase();
+  const p = prefix.toLowerCase();
+  if (a !== b && !a.startsWith(p)) {
+    throw new Error(`Path escapes source root: "${candidate}"`);
   }
-  const sub = join(root, subpath);
+  return resolved;
+}
+
+function withSubpath(root: string, subpath: string, cleanupRoot: string): ResolvedSource {
+  const cleanup = () => rmSync(cleanupRoot, { recursive: true, force: true });
+  if (!subpath) {
+    return { root, cleanup };
+  }
+  let sub: string;
+  try {
+    sub = assertInsideRoot(root, join(root, subpath));
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
   if (!existsSync(sub)) {
-    rmSync(cleanupRoot, { recursive: true, force: true });
+    cleanup();
     throw new Error(`Subpath "${subpath}" not found.`);
   }
-  return { root: sub, cleanup: () => rmSync(cleanupRoot, { recursive: true, force: true }) };
+  return { root: sub, cleanup };
 }
 
 /**
@@ -85,6 +109,7 @@ export async function resolveSource(
 
   const url = parsed.url;
   if (!url) throw new Error(`Cannot resolve source "${parsed.raw}".`);
+  const safeUrl = redactUrl(url);
 
   const tmp = mkdtempSync(join(tmpdir(), 'agentry-src-'));
   try {
@@ -96,7 +121,7 @@ export async function resolveSource(
     const cacheOk = existsSync(cached) && existsSync(join(cached, '.git'));
 
     if (cacheOk && opts.confirmCache) {
-      const ok = await opts.confirmCache({ url, cacheDir: cached, error: detail });
+      const ok = await opts.confirmCache({ url: safeUrl, cacheDir: cached, error: detail });
       if (ok) {
         const work = mkdtempSync(join(tmpdir(), 'agentry-src-'));
         cpSync(cached, work, { recursive: true });
@@ -108,7 +133,7 @@ export async function resolveSource(
     const hint = cacheOk
       ? '\n(A local cache exists — re-run interactively to load it, or pass -y to auto-use cache.)'
       : '';
-    throw new Error(`git clone failed for ${url}\n${detail}${hint}`);
+    throw new Error(`git clone failed for ${safeUrl}\n${detail}${hint}`);
   }
 
   saveToCache(parsed, tmp);

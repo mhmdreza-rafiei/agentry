@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import https from 'node:https';
 import { version, name as pkgName } from '../package.json' with { type: 'json' };
 import { ARTIFACT_KINDS, type ArtifactKind } from './core/types.js';
@@ -107,14 +107,14 @@ async function runUpdateSelf(): Promise<void> {
 
 function runNpmInstall(spec: string): void {
   ui.spinner(`Updating agentry CLI`, () => {
-    try { execSync(`npm install -g ${spec}`, { stdio: 'inherit' }); }
+    try { execFileSync('npm', ['install', '-g', spec], { stdio: 'inherit' }); }
     catch { ui.err('Update failed. Once published, run: npm install -g ' + spec); process.exit(1); }
   });
 }
 
 function runUninstall(): void {
   ui.spinner('Uninstalling agentry CLI', () => {
-    try { execSync(`npm uninstall -g ${pkgName}`, { stdio: 'inherit' }); }
+    try { execFileSync('npm', ['uninstall', '-g', pkgName], { stdio: 'inherit' }); }
     catch { ui.err('Uninstall failed. Try: npm uninstall -g ' + pkgName); process.exit(1); }
   });
 }

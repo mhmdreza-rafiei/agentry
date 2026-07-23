@@ -18,10 +18,20 @@ export function isLocalPath(source: string): boolean {
   try { return existsSync(source) && statSync(source).isDirectory(); } catch { return false; }
 }
 
+/** Git ref from a tree URL — letters/digits first, then word / . / - only. */
+const SAFE_REF = /^[a-zA-Z0-9][\w./-]*$/;
+
 function parseGithubTreeUrl(url: string) {
   const m = url.match(/^https?:\/\/github\.com\/([\w.-]+\/[\w.-]+?)\/tree\/([^/]+)\/(.+)$/);
   if (!m) return null;
-  return { ownerRepo: m[1]!, ref: m[2]!, subpath: m[3]!.replace(/\/+$/, '') };
+  const ref = m[2]!;
+  if (!SAFE_REF.test(ref)) throw new Error(`Invalid git ref in source URL: "${ref}"`);
+  return { ownerRepo: m[1]!, ref, subpath: m[3]!.replace(/\/+$/, '') };
+}
+
+/** Strip userinfo from URLs before logging (e.g. https://user:token@host/…). */
+export function redactUrl(url: string): string {
+  return url.replace(/:\/\/([^/@]+)@/g, '://***@');
 }
 
 export function parseSource(source: string): ParsedSource {

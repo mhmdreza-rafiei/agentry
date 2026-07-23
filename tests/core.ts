@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync, symlinkSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { listKind, listAll, select } from '../src/artifacts/discovery.js';
-import { parseSource, sourcesEqual, sourceIdentity, isExplicitSource } from '../src/core/source_parser.js';
-import { resolveSource } from '../src/core/git.js';
+import { parseSource, sourcesEqual, sourceIdentity, isExplicitSource, redactUrl } from '../src/core/source_parser.js';
+import { resolveSource, assertInsideRoot } from '../src/core/git.js';
 import { installOne, removeSelection, listInstalled, readLock, writeLock } from '../src/core/lock.js';
 import { getAgent, listAgents, resolveAgents } from '../src/registry/agents.js';
 import { ProfileSchema } from '../src/artifacts/profiles.js';
@@ -324,5 +324,51 @@ describe('parseSource', () => {
     const gh = parseSource('vercel-labs/skills');
     expect(gh.kind).toBe('github-shorthand');
     expect(gh.url).toContain('github.com/vercel-labs/skills');
+  });
+
+  it('rejects unsafe git refs in tree URLs', () => {
+    expect(() => parseSource('https://github.com/a/b/tree/--upload-pack/skills')).toThrow(/Invalid git ref/);
+  });
+
+  it('redacts credentials in URLs', () => {
+    expect(redactUrl('https://user:token@github.com/a/b.git')).toBe('https://***@github.com/a/b.git');
+  });
+});
+
+describe('security hardening', () => {
+  it('assertInsideRoot blocks path escape via ..', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentry-root-'));
+    expect(() => assertInsideRoot(root, join(root, '..', '..', 'etc'))).toThrow(/escapes/);
+    expect(assertInsideRoot(root, join(root, 'skills', 'x'))).toContain('skills');
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('install dereferences symlinks from source trees', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentry-sym-'));
+    const outside = join(root, 'outside-secret.txt');
+    writeFileSync(outside, 'SECRET');
+    const skillDir = join(root, 'skills', 'linky');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: linky\ndescription: x\n---\n# linky\n');
+    try {
+      symlinkSync(outside, join(skillDir, 'leaked.txt'));
+    } catch {
+      // Windows without symlink privilege — skip
+      rmSync(root, { recursive: true, force: true });
+      return;
+    }
+
+    const target = mkdtempSync(join(tmpdir(), 'agentry-tgt-'));
+    const opts: InstallOpts = { scope: 'project', dir: target, agents: [], copy: true, dryRun: false };
+    const skill = select(root, 'skill', 'linky')[0]!;
+    installOne(skill, opts, [getAgent('cursor')!], root);
+
+    const installed = join(target, '.agents', 'skills', 'linky', 'leaked.txt');
+    expect(existsSync(installed)).toBe(true);
+    expect(lstatSync(installed).isSymbolicLink()).toBe(false);
+    expect(readFileSync(installed, 'utf8')).toBe('SECRET');
+
+    rmSync(root, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
   });
 });
