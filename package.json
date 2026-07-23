@@ -1,6 +1,6 @@
 {
   "name": "@mhmdreza-rafiei/agentry",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "One CLI to install agents, skills, rules, and profiles onto AI coding agents — portable AI/agent tooling.",
   "type": "module",
   "bin": {
