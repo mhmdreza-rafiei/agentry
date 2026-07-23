@@ -18,12 +18,17 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      # Do not set registry-url / NODE_AUTH_TOKEN — Trusted Publisher uses OIDC.
-      # An empty _authToken in .npmrc breaks publish when 2FA disallows tokens.
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
-          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted Publisher requires npm >= 11.5.1 (OIDC). Node 22 image may ship older npm.
+      - name: Upgrade npm for OIDC
+        run: |
+          npm install -g npm@latest
+          npm --version
+          node --version
 
       - run: npm ci
       - run: npm run typecheck
@@ -36,6 +41,7 @@ jobs:
           NAME=$(node -p "require('./package.json').name")
           VER=$(node -p "require('./package.json').version")
           echo "Package: ${NAME}@${VER}"
+          echo "npm $(npm --version)"
           if npm view "${NAME}@${VER}" version >/dev/null 2>&1; then
             echo "Already published: ${NAME}@${VER} - skip"
             exit 0
