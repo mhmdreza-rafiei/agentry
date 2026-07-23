@@ -17,4 +17,5 @@ Public-facing CLI on `main`. History rewritten to remove Cursor Agent authorship
 - Wait for GitHub Contributors cache to drop Cursor (can take hours/days after rewrite; see discussion #186158).
 - Confirm `mhmdreza-rafiei/agent-tools` is public for README examples.
 - npm Trusted Publisher configured; CI publish via `.github/workflows/publish.yml` (OIDC, no token). Track `package-lock.json` for `npm ci`. Bump version then push `main` to release.
+- Dependabot/vite-esbuild alerts cleared by upgrading `vitest` to ^4.1.10 (`npm audit` → 0).
 - Tip: turn off Cursor Settings → Agents → Attribution; local `.git/hooks/prepare-commit-msg` strips reinjected trailers.

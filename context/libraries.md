@@ -16,7 +16,7 @@ Dependencies and tooling for agentry. Minimal and intentional; UI libs are bundl
 - `typescript` — strict ESM typecheck (`npm run typecheck`).
 - `tsx` — run TS directly in dev (`npm run dev`).
 - `obuild` — bundle `src/cli.ts` -> `dist/cli.mjs` (UI libs bundled in; `npm run build`).
-- `vitest` — test runner (`npm test`, sources in `tests/`).
+- `vitest` — test runner (`npm test`, sources in `tests/`). Keep current major so transitive `vite`/`esbuild` stay past Dependabot advisories.
 - `@types/node` — Node type defs.
 
 ## External tools used at runtime
