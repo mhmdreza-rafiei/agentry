@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/agentry-logo.png" alt="Agentry" width="100%" />
-
 # Agentry
 
 **Install agents, skills, rules, scripts, and profiles onto coding agents — from any Git repo.**
