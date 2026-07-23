@@ -20,6 +20,8 @@ import * as clack from '@clack/prompts';
 
 export interface CliOpts {
   scope: 'global' | 'project';
+  /** True when -g/-p/--global/--project/--dir was passed (skip scope prompt). */
+  scopeExplicit: boolean;
   dir?: string;
   agents: string[];
   copy: boolean;
@@ -91,12 +93,15 @@ export async function cmdAdd(kind: ArtifactKind | 'all', source: string, selecto
     }
 
     const agentList = await resolveAgentList(opts, 'install');
+    const askScope = !opts.scopeExplicit && !opts.yes && !ui.isQuiet();
     if (!ui.isQuiet() && !opts.agents.length && !opts.all && !opts.yes) {
       await ui.sectionTransition(
         `${agentList.length} agent${agentList.length === 1 ? '' : 's'} selected`,
-        'install summary',
+        askScope ? 'installation scope' : 'install summary',
       );
     }
+    if (!(await ensureInstallScope(opts, 'install'))) return;
+    if (askScope) await ui.sectionTransition('scope set', 'install summary');
     installAll(chosen, opts, agentList, source);
   } finally { cleanup(); }
 }
@@ -116,6 +121,7 @@ export async function cmdAddProfile(name: string, source: string | undefined, op
   const repo = source || (profile.artifacts.skills[0]?.source ?? profile.artifacts.rules[0]?.source);
   if (!repo) throw new Error(`No source given and ${file} lists none. Try: agentry add profile ${name} author/repo`);
   const agentList = await resolveAgentList(opts, 'install');
+  if (!(await ensureInstallScope(opts, 'install'))) return;
   const { root, cleanup } = await resolveSourceWithUi(repo, opts);
   try {
     const artifacts = [];
@@ -160,6 +166,30 @@ async function resolveAgentList(opts: CliOpts, action: ui.AgentAction = 'install
   return selected as AgentConfig[];
 }
 
+/** After agents: prompt Project vs Global unless -g/-p/--dir/-y/CI. */
+async function ensureInstallScope(opts: CliOpts, action: ui.AgentAction): Promise<boolean> {
+  if (opts.scopeExplicit) return true;
+  if (opts.yes || ui.isQuiet()) return true; // default remains project
+  const { homedir } = await import('node:os');
+  if (!ui.isQuiet()) {
+    await ui.sectionTransition(
+      `${action === 'install' ? 'agents' : action} ready`,
+      ui.scopePrompt(action).toLowerCase(),
+    );
+  }
+  const picked = await ui.selectInstallScope(ui.scopePrompt(action), {
+    projectDir: opts.dir || process.cwd(),
+    homeDir: homedir(),
+  });
+  if (picked == null || ui.isCancelLike(picked)) {
+    ui.outro('Cancelled.');
+    return false;
+  }
+  opts.scope = picked;
+  opts.scopeExplicit = true;
+  return true;
+}
+
 function installAll(artifacts: Artifact[], opts: CliOpts, agentList: AgentConfig[], source: string): void {
   if (!artifacts.length) { ui.warn('Nothing matched - nothing installed.'); return; }
   const where = opts.scope === 'global' ? 'global (~)' : `project (${opts.dir || process.cwd()})`;
@@ -183,9 +213,17 @@ function resolveSourceOrSelector(
   if (!arg1) return {};
   if (isExplicitSource(arg1)) return { source: arg1 };
   if (isOwnerRepoShape(arg1)) {
-    const lock = readLock(toInstallOpts(opts));
-    const hit = Object.values(lock.items).some((e) => e.source && sourcesEqual(e.source, arg1));
-    if (hit) return { source: arg1 };
+    // Check both scopes — user may not have chosen Project/Global yet.
+    const bases: InstallOpts[] = [
+      { scope: 'project', dir: opts.dir, agents: opts.agents, copy: opts.copy, dryRun: opts.dryRun },
+      { scope: 'global', agents: opts.agents, copy: opts.copy, dryRun: opts.dryRun },
+    ];
+    for (const base of bases) {
+      const lock = readLock(base);
+      if (Object.values(lock.items).some((e) => e.source && sourcesEqual(e.source, arg1))) {
+        return { source: arg1 };
+      }
+    }
   }
   return { selector: arg1 };
 }
@@ -208,6 +246,7 @@ export async function cmdRemove(
     await ui.sectionTransition('prepare remove', 'choose agents to remove from');
   }
   const agentList = await resolveAgentList(opts, 'remove');
+  if (!(await ensureInstallScope(opts, 'remove'))) return;
   const installOpts = toInstallOpts(opts);
   const scope = [kind, source, selector].filter(Boolean).join(' / ');
 
@@ -376,7 +415,6 @@ export async function cmdUpdateAssets(
 ): Promise<void> {
   ui.intro();
   const { source, selector } = resolveSourceOrSelector(arg1, arg2, opts);
-  const installOpts = toInstallOpts(opts);
 
   if (source) {
     // Same order as add: parse → discover → pick artifacts → pick agents → install.
@@ -412,6 +450,7 @@ export async function cmdUpdateAssets(
       }
 
       const agentList = await resolveAgentList(opts, 'update');
+      if (!(await ensureInstallScope(opts, 'update'))) return;
       if (!ui.isQuiet() && !opts.agents.length && !opts.all && !opts.yes) {
         await ui.sectionTransition(
           `${agentList.length} agent${agentList.length === 1 ? '' : 's'} selected`,
@@ -424,7 +463,8 @@ export async function cmdUpdateAssets(
   }
 
   // No source: re-install from lockfile sources (optional selector filter).
-  let installed = listInstalled(installOpts).filter((it) => kind === 'all' || it.id.startsWith(kind + '/'));
+  if (!(await ensureInstallScope(opts, 'update'))) return;
+  let installed = listInstalled(toInstallOpts(opts)).filter((it) => kind === 'all' || it.id.startsWith(kind + '/'));
   if (selector) {
     const rel = `${kind}/${selector}`;
     installed = installed.filter((it) => it.id === rel || it.id.startsWith(rel + '/') || it.id.endsWith('/' + selector));

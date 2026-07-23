@@ -26,6 +26,123 @@ export function actionNoun(action: AgentAction): string {
   return 'install';
 }
 
+export function scopePrompt(action: AgentAction): string {
+  if (action === 'remove') return 'Removal scope';
+  if (action === 'update') return 'Update scope';
+  return 'Installation scope';
+}
+
+/**
+ * Ask Project vs Global with path hints under each option (skills-style, after agents).
+ * Returns null on cancel.
+ */
+export async function selectInstallScope(
+  message: string,
+  paths: { projectDir: string; homeDir: string },
+): Promise<'project' | 'global' | null> {
+  if (isQuiet()) return 'project';
+
+  return new Promise((resolve) => {
+    if (!process.stdin.isTTY) {
+      resolve('project');
+      return;
+    }
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    process.stdin.setRawMode(true);
+    readline.emitKeypressEvents(process.stdin, rl);
+
+    type Choice = 'project' | 'global';
+    let value: Choice = 'project';
+    let lastH = 0;
+
+    const joinRel = (base: string, rel: string) => {
+      const sep = base.includes('\\') ? '\\' : '/';
+      const b = base.replace(/[\\/]+$/, '');
+      return `${b}${sep}${rel.replace(/\//g, sep)}`;
+    };
+
+    const optionBlock = (key: Choice, selected: boolean, done?: Choice | 'cancel') => {
+      const active = done ? done === key : selected;
+      const bullet = active ? sky(c.bold('●')) : c.dim('○');
+      const title = key === 'project' ? 'Project' : 'Global';
+      const hint =
+        key === 'project'
+          ? 'Install in the current directory (committed with your project)'
+          : 'Install in your home directory (available across all projects)';
+      const path = key === 'project' ? paths.projectDir : paths.homeDir;
+      const lock =
+        key === 'project'
+          ? joinRel(paths.projectDir, '.agentry/lock.json')
+          : joinRel(paths.homeDir, '.agentry/lock.json');
+      const lines: string[] = [];
+      if (done === 'cancel') {
+        lines.push(`${c.dim('│')}  ${c.strikethrough(c.dim(title))}`);
+      } else {
+        lines.push(`${c.dim('│')}  ${bullet} ${active ? c.bold(title) : title}`);
+        lines.push(`${c.dim('│')}    ${c.dim(hint)}`);
+        lines.push(`${c.dim('│')}    ${sky('→')} ${c.dim(path)}`);
+        lines.push(`${c.dim('│')}    ${c.dim(`lock ${lock}`)}`);
+      }
+      return lines;
+    };
+
+    const paint = (done?: Choice | 'cancel') => {
+      const lines: string[] = [];
+      if (done === 'cancel') {
+        lines.push(`${sky('■')} ${c.bold(message)}`);
+        lines.push(`${c.dim('│')} ${c.strikethrough(c.dim('Cancelled'))}`);
+      } else if (done === 'project' || done === 'global') {
+        lines.push(`${sky('◇')} ${c.bold(message)}`);
+        lines.push(...optionBlock(done, true, done).slice(0, 2));
+        lines.push(`${c.dim('│')}    ${sky('→')} ${c.dim(done === 'project' ? paths.projectDir : paths.homeDir)}`);
+      } else {
+        lines.push(`${sky('◆')} ${c.bold(message)}`);
+        lines.push(`${c.dim('│')}`);
+        lines.push(...optionBlock('project', value === 'project'));
+        lines.push(`${c.dim('│')}`);
+        lines.push(...optionBlock('global', value === 'global'));
+        lines.push(`${c.dim('└')} ${c.dim('↑/↓ select · enter confirm')}`);
+      }
+      if (lastH > 0) {
+        for (let i = 0; i < lastH; i++) process.stdout.write('\x1b[1A\x1b[2K');
+      }
+      process.stdout.write(lines.join('\n') + '\n');
+      lastH = lines.length;
+    };
+
+    const cleanup = () => {
+      process.stdin.removeListener('keypress', onKey);
+      process.stdin.setRawMode(false);
+      rl.close();
+    };
+
+    const onKey = (_s: string, key: readline.Key) => {
+      if (!key) return;
+      if (key.name === 'up' || key.name === 'down' || key.name === 'tab') {
+        value = value === 'project' ? 'global' : 'project';
+        paint();
+        return;
+      }
+      if (key.name === 'return') {
+        paint(value);
+        cleanup();
+        blank();
+        resolve(value);
+        return;
+      }
+      if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
+        paint('cancel');
+        cleanup();
+        resolve(null);
+      }
+    };
+
+    process.stdin.on('keypress', onKey);
+    blank();
+    paint();
+  });
+}
+
 export function isQuiet(): boolean {
   return isCI() || !process.stdout.isTTY;
 }

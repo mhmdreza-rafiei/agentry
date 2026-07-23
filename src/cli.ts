@@ -25,6 +25,7 @@ function takeOptValue(argv: string[], i: number): { value: string | true; next: 
 function parseArgs(argv: string[]): ParsedArgs {
   const opts: CliOpts = {
     scope: 'project',
+    scopeExplicit: false,
     agents: [],
     copy: false,
     dryRun: false,
@@ -36,10 +37,10 @@ function parseArgs(argv: string[]): ParsedArgs {
   const flags: Record<string, boolean | string> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === '-g' || a === '--global') { opts.scope = 'global'; flags.global = true; }
-    else if (a === '--project') { opts.scope = 'project'; flags.project = true; }
+    if (a === '-g' || a === '--global') { opts.scope = 'global'; opts.scopeExplicit = true; flags.global = true; }
+    else if (a === '-p' || a === '--project') { opts.scope = 'project'; opts.scopeExplicit = true; flags.project = true; }
     else if (a === '-y' || a === '--yes') { opts.yes = true; flags.yes = true; }
-    else if (a === '--dir') { opts.dir = argv[++i]; flags.dir = opts.dir!; }
+    else if (a === '-d' || a === '--dir') { opts.dir = argv[++i]; opts.scope = 'project'; opts.scopeExplicit = true; flags.dir = opts.dir!; }
     else if (a === '-a' || a === '--agent') { opts.agents.push(argv[++i]!); flags.agent = true; }
     else if (a === '-l' || a === '--list') { opts.dryRun = true; flags.list = true; }
     else if (a === '--copy') { opts.copy = true; flags.copy = true; }

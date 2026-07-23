@@ -59,6 +59,19 @@ agentry list skills
 │  Universal (.agents/skills) · Cursor, Codex, …
 │  ◼ Claude Code
 
+◆  Installation scope
+│
+│  ● Project
+│    Install in the current directory (committed with your project)
+│    → /path/to/your-project
+│    lock /path/to/your-project/.agentry/lock.json
+│
+│  ○ Global
+│    Install in your home directory (available across all projects)
+│    → /home/you
+│    lock /home/you/.agentry/lock.json
+└  ↑/↓ select · enter confirm
+
 ◆  Install summary
 │  Scope      project
 │  Targets    4 agents · 3 universal · 1 additional
@@ -114,13 +127,13 @@ agentry add skills git@github.com:mhmdreza-rafiei/agent-tools.git
 | Option | Description |
 | --- | --- |
 | `-g, --global` | Install into `~` (all projects) |
-| `--project` | Install into the current folder (default) |
-| `--dir <path>` | Install into a specific folder |
+| `-p, --project` | Install into the current folder |
+| `-d, --dir <path>` | Install into a specific folder |
 | `-a, --agent <name>` | Target provider(s); repeatable; `*` = all |
 | `-l, --list` | Preview only — write nothing |
 | `--copy` | Copy instead of symlink for non-universal agents |
 | `--all` | Install everything to all agents, no prompts |
-| `-y, --yes` | Skip prompts |
+| `-y, --yes` | Skip prompts (scope defaults to project) |
 | `--description <text>` | `init`: frontmatter description |
 | `--alwaysApply` | `init` rule: `alwaysApply: true` |
 | `--reference` / `--no-reference` | `init` skill: include `references/TEMPLATE.md` |
