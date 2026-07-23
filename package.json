@@ -4,7 +4,7 @@
   "description": "One CLI to install agents, skills, rules, and profiles onto AI coding agents — portable AI/agent tooling.",
   "type": "module",
   "bin": {
-    "agentry": "./dist/cli.mjs"
+    "agentry": "dist/cli.mjs"
   },
   "files": [
     "dist",
