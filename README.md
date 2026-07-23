@@ -35,6 +35,44 @@ agentry list
 agentry list skills
 ```
 
+## What it looks like
+
+```text
+ █████╗  ██████╗ ███████╗███╗   ██╗████████╗██████╗ ██╗   ██╗
+██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝██╔══██╗╚██╗ ██╔╝
+███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ██████╔╝ ╚████╔╝
+██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ██╔══██╗  ╚██╔╝
+██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ██║  ██║   ██║
+╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝
+  Install agents, skills, rules & profiles
+
+◇  Cloning mhmdreza-rafiei/agent-tools
+◇  Found 12 skills
+
+◆  Select skills to install
+│  Search: enhance
+│  ◼ All
+│  ◼ prompt/enhance-prompt
+│  ◻ quick-start
+│
+◇  Which agents do you want to install to?
+│  Universal (.agents/skills) · Cursor, Codex, …
+│  ◼ Claude Code
+
+◆  Install summary
+│  Scope      project
+│  Targets    4 agents · 3 universal · 1 additional
+│             Cursor, Codex, OpenCode, Claude Code
+│
+│  Artifacts  1 selected
+│  • skill/prompt/enhance-prompt
+│    Rewrite prompts for clarity and fidelity
+│
+└  Review before use — artifacts run with full agent permissions.
+
+◇  Installed skill/prompt/enhance-prompt
+```
+
 ## Commands
 
 | Command | Description |
