@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { listKind, listAll, select } from '../src/artifacts/discovery.js';
-import { parseSource } from '../src/core/source_parser.js';
+import { parseSource, sourcesEqual, sourceIdentity, isExplicitSource } from '../src/core/source_parser.js';
 import { resolveSource } from '../src/core/git.js';
 import { installOne, removeSelection, listInstalled, readLock, writeLock } from '../src/core/lock.js';
 import { getAgent, listAgents, resolveAgents } from '../src/registry/agents.js';
 import { ProfileSchema } from '../src/artifacts/profiles.js';
+import { scaffoldSkill, scaffoldMdc, scaffoldProfile, scaffoldScript } from '../src/artifacts/scaffold.js';
 import type { Artifact, InstallOpts, AgentConfig } from '../src/core/types.js';
 
 // Build a throwaway "source repo" with the agentry asset layouts:
@@ -73,9 +74,9 @@ describe('source parser', () => {
     expect(parseSource('https://example.com/x.git').kind).toBe('git-url');
   });
 
-  it('resolves local paths', () => {
+  it('resolves local paths', async () => {
     const root = makeFixture();
-    expect(resolveSource(root).root).toBe(root);
+    expect((await resolveSource(root)).root).toBe(root);
     rmSync(root, { recursive: true, force: true });
   });
 });
@@ -177,6 +178,54 @@ describe('install / remove', () => {
     rmSync(root, { recursive: true, force: true });
     rmSync(target, { recursive: true, force: true });
   });
+
+  it('remove deletes canonical .agents/skills folders not only the lock', () => {
+    const root = makeFixture();
+    const target = mkdtempSync(join(tmpdir(), 'agentry-tgt-'));
+    const opts: InstallOpts = { scope: 'project', dir: target, agents: [], copy: true, dryRun: false };
+    const agents: AgentConfig[] = [getAgent('cursor')!, getAgent('claude-code')!];
+    installOne(select(root, 'skill', 'prompt/enhance-prompt')[0]!, opts, agents, root);
+    const skillPath = join(target, '.agents', 'skills', 'prompt', 'enhance-prompt');
+    const claudePath = join(target, '.claude', 'skills', 'prompt', 'enhance-prompt');
+    expect(existsSync(skillPath)).toBe(true);
+    expect(existsSync(claudePath)).toBe(true);
+
+    const r = removeSelection('skill', 'prompt/enhance-prompt', opts, agents);
+    expect(r.existed).toBe(true);
+    expect(existsSync(skillPath)).toBe(false);
+    expect(existsSync(claudePath)).toBe(false);
+    // Last skill gone → empty skills/.agents/.agentry pruned.
+    expect(existsSync(join(target, '.agents', 'skills'))).toBe(false);
+    expect(existsSync(join(target, '.agents'))).toBe(false);
+    expect(existsSync(join(target, '.agentry'))).toBe(false);
+    expect(readLock(opts).items['skill/prompt/enhance-prompt']).toBeUndefined();
+    expect(r.removedPaths.length).toBeGreaterThan(0);
+
+    rmSync(root, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  });
+
+  it('prunes empty kind folders but keeps siblings', () => {
+    const root = makeFixture();
+    const target = mkdtempSync(join(tmpdir(), 'agentry-tgt-'));
+    const opts: InstallOpts = { scope: 'project', dir: target, agents: [], copy: true, dryRun: false };
+    const agents: AgentConfig[] = [getAgent('cursor')!];
+    installOne(select(root, 'skill', 'prompt/enhance-prompt')[0]!, opts, agents, root);
+    installOne(select(root, 'skill', 'quick')[0]!, opts, agents, root);
+
+    removeSelection('skill', 'prompt/enhance-prompt', opts, agents);
+    expect(existsSync(join(target, '.agents', 'skills', 'prompt'))).toBe(false);
+    expect(existsSync(join(target, '.agents', 'skills', 'quick'))).toBe(true);
+    expect(existsSync(join(target, '.agents', 'skills'))).toBe(true);
+    expect(existsSync(join(target, '.agentry', 'lock.json'))).toBe(true);
+
+    removeSelection('skill', 'quick', opts, agents);
+    expect(existsSync(join(target, '.agents'))).toBe(false);
+    expect(existsSync(join(target, '.agentry'))).toBe(false);
+
+    rmSync(root, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  });
 });
 
 describe('profiles', () => {
@@ -192,5 +241,88 @@ describe('profiles', () => {
       expect(result.data.artifacts.skills[0]!.id).toBe('prompt/enhance-prompt');
     }
     rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe('source identity', () => {
+  it('equates github shorthand with github URL', () => {
+    expect(sourcesEqual('vercel-labs/agent-skills', 'https://github.com/vercel-labs/agent-skills')).toBe(true);
+    expect(sourcesEqual('vercel-labs/agent-skills', 'https://github.com/vercel-labs/agent-skills.git')).toBe(true);
+    expect(sourceIdentity('owner/repo')).toContain('github.com/owner/repo');
+    expect(isExplicitSource('./local-skills')).toBe(true);
+    expect(isExplicitSource('https://github.com/a/b')).toBe(true);
+    expect(isExplicitSource('prompt/enhance-prompt')).toBe(false);
+  });
+});
+
+describe('remove by source', () => {
+  it('removes only lock entries matching the install source', () => {
+    const rootA = makeFixture();
+    const rootB = mkdtempSync(join(tmpdir(), 'agentry-src-b-'));
+    mkdirSync(join(rootB, 'skills', 'other'), { recursive: true });
+    writeFileSync(join(rootB, 'skills', 'other', 'SKILL.md'), '---\nname: other\ndescription: b\n---\n# other\n');
+    const target = mkdtempSync(join(tmpdir(), 'agentry-tgt-'));
+    const opts: InstallOpts = { scope: 'project', dir: target, agents: [], copy: true, dryRun: false };
+    const agents: AgentConfig[] = [getAgent('cursor')!];
+
+    installOne(select(rootA, 'skill', 'prompt/enhance-prompt')[0]!, opts, agents, 'author/repo-a');
+    installOne(select(rootB, 'skill', 'other')[0]!, opts, agents, 'author/repo-b');
+
+    const r = removeSelection('skill', undefined, opts, agents, 'author/repo-a');
+    expect(r.removedKeys).toEqual(['skill/prompt/enhance-prompt']);
+    expect(existsSync(join(target, '.agents', 'skills', 'prompt', 'enhance-prompt'))).toBe(false);
+    expect(existsSync(join(target, '.agents', 'skills', 'other', 'SKILL.md'))).toBe(true);
+
+    rmSync(rootA, { recursive: true, force: true });
+    rmSync(rootB, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  });
+});
+
+describe('scaffold / init', () => {
+  it('scaffolds skill with references, rule with alwaysApply, profile yaml, script folder', () => {
+    const base = mkdtempSync(join(tmpdir(), 'agentry-init-'));
+    const skill = scaffoldSkill({ name: 'enhance-prompt', category: 'prompt', description: 'rewrite', baseDir: base });
+    expect(existsSync(join(base, 'skills', 'prompt', 'enhance-prompt', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(base, 'skills', 'prompt', 'enhance-prompt', 'references', 'TEMPLATE.md'))).toBe(true);
+    expect(skill.id).toBe('prompt/enhance-prompt');
+
+    const rule = scaffoldMdc({
+      kind: 'rule',
+      name: 'ask-dont-guess',
+      description: "Don't guess",
+      alwaysApply: true,
+      baseDir: base,
+    });
+    const ruleBody = readFileSync(rule.paths[0]!, 'utf8');
+    expect(ruleBody).toContain('alwaysApply: true');
+
+    const profile = scaffoldProfile({
+      name: 'frontend',
+      description: 'fe',
+      agents: ['cursor'],
+      skills: [{ id: 'prompt/enhance-prompt', source: 'author/repo' }],
+      baseDir: base,
+    });
+    expect(existsSync(join(base, 'profiles', 'frontend.yaml'))).toBe(true);
+    const { parse } = require('yaml');
+    const parsed = parse(readFileSync(profile.paths[0]!, 'utf8'));
+    expect(parsed.artifacts.skills[0].id).toBe('prompt/enhance-prompt');
+
+    const script = scaffoldScript({ name: 'deploy', category: 'ci', baseDir: base });
+    expect(existsSync(join(base, 'scripts', 'ci', 'deploy', 'README.md'))).toBe(true);
+    expect(script.id).toBe('ci/deploy');
+
+    rmSync(base, { recursive: true, force: true });
+  });
+});
+
+describe('parseSource', () => {
+  it('parses local, shorthand, and github url', () => {
+    const local = parseSource('.');
+    expect(local.kind).toBe('local');
+    const gh = parseSource('vercel-labs/skills');
+    expect(gh.kind).toBe('github-shorthand');
+    expect(gh.url).toContain('github.com/vercel-labs/skills');
   });
 });

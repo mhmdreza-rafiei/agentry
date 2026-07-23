@@ -1,12 +1,28 @@
 import c from 'picocolors';
 
-// ── Color palette (primary = blue for selection / interactive) ──
+/** Truecolor sky blue (#38bdf8) — softer than ANSI blue. */
+function fgSky(s: string): string {
+  return `\x1b[38;2;56;189;248m${s}\x1b[0m`;
+}
+function bgSky(s: string): string {
+  return `\x1b[48;2;14;165;233m${s}\x1b[0m`;
+}
+
+export const sky = Object.assign(
+  (s: string) => fgSky(s),
+  {
+    bold: (s: string) => c.bold(fgSky(s)),
+    bg: (s: string) => bgSky(s),
+  },
+);
+
+// ── Color palette (primary = sky blue for selection / interactive) ──
 export const PALETTE = {
-  primary: c.blue,
+  primary: sky,
   success: c.green,
   error: c.red,
   warn: c.yellow,
-  info: c.blue,
+  info: sky,
   dim: c.dim,
   bold: c.bold,
   text: c.white,
@@ -14,10 +30,10 @@ export const PALETTE = {
 export const theme = PALETTE;
 
 export const symbol = {
-  ok: c.blue(process.stdout.isTTY ? '\u2713' : 'v'),
+  ok: sky(process.stdout.isTTY ? '\u2713' : 'v'),
   fail: c.red(process.stdout.isTTY ? '\u2717' : 'x'),
   warn: c.yellow(process.stdout.isTTY ? '\u26a0' : '!'),
-  info: c.blue(process.stdout.isTTY ? '\u2139' : 'i'),
+  info: sky(process.stdout.isTTY ? '\u2139' : 'i'),
   arrow: process.stdout.isTTY ? '\u2192' : '->',
   bullet: process.stdout.isTTY ? '\u2022' : '*',
   diamond: process.stdout.isTTY ? '\u25c6' : '*',
@@ -62,9 +78,9 @@ export function tagline(): string {
   return c.dim('  Install agents, skills, rules & profiles');
 }
 
-// Intro badge — capitalized Agentry, blue (primary).
+// Intro badge — capitalized Agentry, sky primary.
 export function badge(): string {
-  return c.bgBlue(c.white(c.bold(' Agentry ')));
+  return bgSky(c.white(c.bold(' Agentry ')));
 }
 
 /** Brief pause so steps feel animated (skipped when not a TTY / quiet). */
@@ -80,19 +96,19 @@ export async function animateLogo(): Promise<void> {
 }
 
 function h(title: string): string {
-  return c.bold(c.blue(title));
+  return c.bold(sky(title));
 }
 function cmd(s: string): string {
   return c.cyan(s);
 }
 function flag(s: string): string {
-  return c.blue(s);
+  return sky(s);
 }
 function dim(s: string): string {
   return c.dim(s);
 }
 function bullet(s: string): string {
-  return `  ${c.blue('•')} ${s}`;
+  return `  ${sky('•')} ${s}`;
 }
 
 /** Styled help — sections, colored commands/flags, readable hierarchy. */
@@ -104,9 +120,10 @@ export function printHelp(): void {
     h('Usage'),
     `  ${cmd('agentry')} ${flag('add')}     ${dim('<kind> <source> [selector] [options]')}`,
     `  ${cmd('agentry')} ${flag('add')}     ${dim('profile <name> [source] [options]')}`,
-    `  ${cmd('agentry')} ${flag('remove')}  ${dim('<kind> [selector] [options]')}`,
+    `  ${cmd('agentry')} ${flag('remove')}  ${dim('<kind> [source] [selector] [options]')}`,
     `  ${cmd('agentry')} ${flag('list')}    ${dim('[source] [kind]')}`,
     `  ${cmd('agentry')} ${flag('update')}  ${dim('[kind] [source] [selector]')}`,
+    `  ${cmd('agentry')} ${flag('init')}    ${dim('<kind> [name] [category] [options]')}`,
     `  ${cmd('agentry')} ${flag('uninstall')}`,
     '',
     h('Kinds'),
@@ -124,11 +141,13 @@ export function printHelp(): void {
     bullet(`${cmd('agentry add skills')} Prat011/awesome-llm-skills`),
     bullet(`${cmd('agentry add skills')} ./my-skills ${flag('--list')}`),
     bullet(`${cmd('agentry add skills')} ./my-skills enhance-prompt ${flag('-a')} cursor ${flag('-a')} claude-code`),
-    bullet(`${cmd('agentry add agents')} author/repo frontend-developer`),
-    bullet(`${cmd('agentry add profile')} frontend author/repo`),
     bullet(`${cmd('agentry remove skills')} enhance-prompt`),
-    bullet(`${cmd('agentry update')}`),
+    bullet(`${cmd('agentry remove skills')} vercel-labs/agent-skills`),
     bullet(`${cmd('agentry update skills')} author/repo enhance-prompt`),
+    bullet(`${cmd('agentry init skill')} enhance-prompt prompt ${flag('--reference')}`),
+    bullet(`${cmd('agentry init profile')} frontend ${flag('--skills')} vercel-labs/agent-skills`),
+    bullet(`${cmd('agentry init rule')} ask-dont-guess ${flag('--alwaysApply')}`),
+    bullet(`${cmd('agentry update')}`),
     '',
     h('Options'),
     `  ${flag('-g, --global')}     ${dim('Install into ~ (all projects)')}`,
@@ -139,10 +158,19 @@ export function printHelp(): void {
     `      ${flag('--copy')}       ${dim('Copy files instead of symlinking')}`,
     `      ${flag('--all')}        ${dim('Install everything to all agents, no prompts')}`,
     `  ${flag('-y, --yes')}        ${dim("Don't prompt")}`,
+    `      ${flag('--description')} ${dim('<t>')}  ${dim('init: frontmatter description')}`,
+    `      ${flag('--alwaysApply')} ${dim('init rule: alwaysApply: true')}`,
+    `      ${flag('--reference')}  ${dim('init skill: add references/TEMPLATE.md')}`,
+    `      ${flag('--no-reference')} ${dim('init skill: skip references/')}`,
+    `      ${flag('--skills')} ${dim('[src]')} ${dim('init profile: include skills (optional source)')}`,
+    `      ${flag('--agents')} ${dim('[src]')} ${dim('init profile: include agents')}`,
+    `      ${flag('--rules')} ${dim('[src]')}  ${dim('init profile: include rules')}`,
+    `      ${flag('--scripts')} ${dim('[src]')} ${dim('init profile: include scripts')}`,
     `  ${flag('-v, --version')}    ${dim('Print version')}`,
     `  ${flag('-h, --help')}       ${dim('Show this help')}`,
     '',
     dim('Tip: omit --agent to pick providers interactively (universal locked + searchable list).'),
+    dim('Tip: remove/update accept a GitHub repo or local path to filter by install source.'),
     '',
   ];
   process.stdout.write(lines.join('\n'));

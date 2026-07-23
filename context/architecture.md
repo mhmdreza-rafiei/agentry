@@ -55,15 +55,16 @@ Artifact layouts in a source repo:
 - Renders the animated robot logo + tagline unless quiet (inside agent/CI); `--help` shows logo + help.
 
 ### Command handlers (`src/commands.ts`)
-- `cmdAdd` / `cmdAddProfile` / `cmdRemove` / `cmdList` / `cmdListInstalled` / `cmdUpdateAssets`.
-- `cmdAdd` flow: `ui.intro()` (badge) → spinner "Parsing source…" → print `Source: <url>` → spinner "Discovering…" → `Found N` → `selectArtifacts` (with `All` toggle) → `resolveAgentList` → `installAll` → `outro`.
-- `resolveAgentList(opts)` (async) — `--all` -> all; `--agent` -> resolved (errors on unknown); else prompt "Which agents do you want to install to?" via `selectAgents` (universal locked + others selectable, defaulting to installed providers); non-interactive -> auto-detected + `cursor`.
-- `installAll` — installs a batch, logs each dest, warns about permissions.
+- `cmdAdd` / `cmdAddProfile` / `cmdRemove` / `cmdList` / `cmdListInstalled` / `cmdUpdateAssets` / `cmdInit`.
+- `cmdAdd` flow: `ui.intro()` (badge) → spinner "Parsing source…" → print `Source: <url>` → spinner "Discovering…" → `Found N` → `selectArtifacts` → `resolveAgentList` (action-aware prompt) → `installAll` → `outro`.
+- `cmdRemove` / `cmdUpdateAssets` accept optional GitHub/local `source` (+ selector); lock entries filtered via `sourcesEqual`.
+- `cmdInit` scaffolds skill/agent/rule/script/profile templates (`src/artifacts/scaffold.ts`); profile init can pick artifacts from a remote/local source.
+- `resolveAgentList(opts, action)` (async) — `--all` -> all; `--agent` -> resolved; else prompt via `selectAgents` with install/remove/update wording; non-interactive -> auto-detected + `cursor`.
 
 ### Core (`src/core/`)
-- `source_parser.ts` — `parseSource(source)` -> `{ kind, raw, url, subpath, ref?, local? }`. Kinds: local, github-shorthand, github-url (+tree subdir+ref), gitlab-url, git-url.
+- `source_parser.ts` — `parseSource(source)` -> `{ kind, raw, url, subpath, ref?, local? }`; `sourceIdentity` / `sourcesEqual` / `isExplicitSource` for lock matching.
 - `git.ts` — `resolveSource(source)` -> `{ root, cleanup }`. Local: as-is. Remote: `git clone --depth 1 [--branch ref]` to temp; optional subpath; cleanup after.
-- `lock.ts` — `lockBase` / `lockPath` (`.agentry/lock.json`, provider-neutral) / `legacyLockPath` / `readLock` (new path, then legacy fallback) / `writeLock` (writes new path, drops legacy file); `listInstalled`; `installOne` (universal+symlink for skills: canonical at `.agents/skills/<id>`, non-universal agents symlink/copy to it; agents/rules/profiles/scripts are per-agent to `<configDir>/<kind>s/<...>`; dry-run; records `{ source, installedAt, agents, kind }`); `removeSelection` (rm canonical + per-agent targets, delete lock keys, source-free).
+- `lock.ts` — `lockBase` / `lockPath` (`.agentry/lock.json`) / legacy migrate; `installOne`; `removeSelection(kind, selector, opts, agents, sourceFilter?)` — optional source filter via `sourcesEqual`.
 - `types.ts` — shared types + `ARTIFACT_KINDS` (`skill | rule | agent | profile | script`).
 
 ### Registry (`src/registry/agents.ts`)
@@ -74,11 +75,12 @@ Artifact layouts in a source repo:
 ### Artifacts (`src/artifacts/`)
 - `discovery.ts` — `listKind(root, kind)` unions `<kind>s/` folder + repo-root markers (scripts/profiles are folder/file kinds, no root marker); dedupes by id; sorts. `select(root, kind, selector)` — `undefined` (all), `category/name`, `category`, bare `name`. `listAll`.
 - `profiles.ts` — `ProfileSchema` (zod: name, description, scope, targets.agents, artifacts.{skills,rules,agents,scripts}); `loadProfile(name)` reads `profile/<name>.yaml`.
+- `scaffold.ts` — `scaffoldSkill` / `scaffoldMdc` / `scaffoldScript` / `scaffoldProfile` for `agentry init`.
 
 ### UI (`src/ui/`)
-- `theme.ts` — `PALETTE` (primary **blue**), large block ASCII `AGENTRY` wordmark (white→gray gradient), `badge()` (` Agentry ` on blue), `tagline()`, `delay()`, `animateLogo()`.
-- `search_multiselect.ts` — custom searchable multiselect (readline raw mode): fixed viewport (`maxVisible`), Search filter, blue ●/❯ selection, rectangle Info box, locked Universal section, required ≥1 option, value dedupe. Adapted from vercel-labs/skills, themed for Agentry.
-- `prompts.ts` — Clack wrappers + `selectArtifacts` / `selectAgents` (All | Detected | Choose specific → searchMultiselect), spinner with min duration, `isQuiet()`, `isCancelLike()`.
+- `theme.ts` — `PALETTE` (primary **sky** `#38bdf8` truecolor), large block ASCII `AGENTRY` wordmark (white→gray gradient), `badge()` (` Agentry ` on sky), `tagline()`, `delay()`, `animateLogo()`, `printHelp()`.
+- `search_multiselect.ts` — custom searchable multiselect (readline raw mode): fixed viewport (`maxVisible`), Search filter, sky ●/❯ selection, rectangle Info box, locked Universal section, required ≥1 option, value dedupe; clear-frame uses `moveCursor` + `clearScreenDown` (+1 row safety) to avoid stacked duplicates.
+- `prompts.ts` — Clack wrappers + `selectArtifacts` / `selectAgents` + action-aware `agentsPrompt` (install/remove/update) + `installSummary`.
 - `detect.ts` — `isCI()`: `CI` env, no TTY, or `@vercel/detect-agent` detects an agent.
 
 ## Data flow

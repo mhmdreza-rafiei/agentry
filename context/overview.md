@@ -20,16 +20,17 @@ Existing agent/skill tooling is fragmented across providers (Cursor, Claude Code
 - Fetch artifacts from a Git source or local path.
 - Discover artifacts by folder convention or root marker file (dual-mode).
 - Install selected artifacts into the target provider directory, idempotently (universal `.agents/skills` canonical + symlinks; `--copy` for independent copies).
-- Remove installed artifacts without needing the source.
+- Remove installed artifacts (by selector and/or GitHub/local install source).
+- Scaffold new artifacts with `agentry init` (skill/agent/rule/script/profile templates + optional pick-from-source for profiles).
 - Apply profiles (bundled artifact + target + scope configs) against a source.
-- Auto-detect installed providers; prompt "Which agents do you want to install to?" (universal locked + others selectable) when no `--agent`; target specific ones with `--agent`; preview with `--list`.
-- Animated robot logo + spinner-step fetch animation on a TTY; suppress interactive UI automatically when running inside an agent or CI.
+- Auto-detect installed providers; prompt with action-aware wording (install to / remove from / update for); target specific ones with `--agent`; preview with `--list`.
+- Sky-blue primary UI + searchable multiselect; suppress interactive UI automatically when running inside an agent or CI.
 
 ## Does not
 
-- Bundle any artifacts of its own.
-- Run agents or skills — it only installs files.
-- (Yet) ship `doctor`, `find`, `use`, `init`, or per-provider rules adapters beyond install paths — see plan.md.
+- Bundle any artifacts of its own (except `init` scaffolds empty templates).
+- Run agents or skills — it only installs/scaffolds files.
+- (Yet) ship `doctor`, `find`, `use`, or per-provider rules adapters beyond install paths — see plan.md.
 
 ## User flow
 

@@ -6,8 +6,8 @@
 
 - `agentry add <kind> <source> [selector]` — fetch a source (`author/repo`, git URL, GitHub tree URL, GitLab URL, or local path) and install matching artifacts. Omit the selector to list-and-pick. Use `--agent cursor --agent claude-code` to target specific providers (or `--agent '*'` for all). Kinds are singular (`skill | rule | agent | profile | script`); plurals are accepted and normalized.
 - `agentry add profile <name> [source]` — read `profile/<name>.yaml` (a bundled install config: artifacts + targets + scope) and install everything it lists from the source (or per-artifact `source` overrides).
-- `agentry remove <kind> [selector]` / `agentry list [source] [kind]` / `agentry update [kind] [source] [selector]` / `agentry uninstall`.
-- Selectors: `category/name`, `name` (uncategorized), or `category` (whole category).
+- `agentry remove <kind> [source] [selector]` / `agentry list [source] [kind]` / `agentry update [kind] [source] [selector]` / `agentry init <kind> [name] [category]` / `agentry uninstall`.
+- Selectors: `category/name`, `name` (uncategorized), or `category` (whole category). Remove/update accept a GitHub repo or local path to filter by recorded install source.
 
 Artifact layouts in a source repo:
 - **skill** — folder per skill: `skills/<name>/SKILL.md` (or `skills/<category>/<name>/SKILL.md`).

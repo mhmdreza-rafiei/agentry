@@ -40,9 +40,10 @@ agentry uninstall
 ```
 agentry add <kind> <source> [category/name | category] [options]
 agentry add profile <name> [source] [options]
-agentry remove <kind> [category/name | category] [options]
+agentry remove <kind> [source] [selector] [options]
 agentry list [source] [kind]
 agentry update [kind] [source] [selector]
+agentry init <kind> [name] [category] [options]
 agentry uninstall
 ```
 
@@ -58,17 +59,22 @@ agentry add agents author/repo frontend-developer               # one agent (.md
 agentry add rules author/repo ask-dont-guess                    # one rule (.mdc file)
 agentry add scripts author/repo lint                            # one script (usecase folder)
 agentry add profile frontend author/repo                        # apply profile/frontend.yaml
-agentry remove skills document-skills/docx                      # remove an installed artifact
+agentry remove skills document-skills/docx                      # remove by selector
+agentry remove skills vercel-labs/agent-skills                  # remove all from that source
+agentry remove skills ./my-skills prompt/enhance-prompt         # remove one from a local source
 agentry list author/repo
 agentry update                                                  # self-update (checks version first)
 agentry update skills author/repo prompt/enhance-prompt         # re-install one artifact from source
 agentry update skills                                           # re-install all skills from lockfile sources
+agentry init skill enhance-prompt prompt --reference            # scaffold skills/prompt/enhance-prompt/
+agentry init rule ask-dont-guess --alwaysApply --description "Ask first"
+agentry init profile frontend --skills vercel-labs/agent-skills -a cursor
 agentry uninstall                                               # remove the CLI
 ```
 
-Flags: `-g, --global` (into `~`), `--project` (current folder, default), `--dir <path>`, `-a, --agent <name>` (repeatable; `*` for all; default: prompt to choose), `-l, --list` (preview, no install), `--copy` (copy files instead of symlinking), `--all` (install everything to all agents, no prompts), `-y, --yes` (no prompts), `-v, --version`, `-h, --help`.
+Flags: `-g, --global` (into `~`), `--project` (current folder, default), `--dir <path>`, `-a, --agent <name>` (repeatable; `*` for all; default: prompt to choose), `-l, --list` (preview, no install), `--copy` (copy files instead of symlinking), `--all` (install everything to all agents, no prompts), `-y, --yes` (no prompts), init flags `--description`, `--alwaysApply`, `--reference` / `--no-reference`, `--skills`/`--agents`/`--rules`/`--scripts` `[source]`, `-v, --version`, `-h, --help`.
 
-When you run `agentry add` without `--agent`, it shows a **fetch animation** (parsing source → discovering → found N), lets you **pick artifacts** (with an `All` toggle), then prompts **"Which agents do you want to install to?"** — universal providers (`.agents/skills`) are locked in and others are selectable, defaulting to the providers you already have installed. The interactive UI (animated robot logo, spinners, prompts) is suppressed automatically when running inside an agent or CI; non-interactive runs default to the current project and auto-detected providers.
+When you run `agentry add` without `--agent`, it shows a **fetch animation** (parsing source → discovering → found N), lets you **pick artifacts** (with an `All` toggle), then prompts **"Which agents do you want to install to?"** — universal providers (`.agents/skills`) are locked in and others are selectable, defaulting to the providers you already have installed. Remove/update use the same agent picker with action-aware wording (“remove from” / “update for”). The interactive UI is suppressed automatically when running inside an agent or CI; non-interactive runs default to the current project and auto-detected providers.
 
 ## How sources are discovered
 
@@ -79,7 +85,7 @@ For each kind, `agentry` finds artifacts in two ways and merges them:
 
 Selectors after the source: `category/name` (one artifact), `name` (one artifact when uncategorized), `category` (whole category), or omit to list-and-pick.
 
-Artifacts install to the provider's directory and are tracked in `.agentry/lock.json` for idempotent installs and clean removal. `remove` works purely on installed files, so it needs no source.
+Artifacts install to the provider's directory and are tracked in `.agentry/lock.json` for idempotent installs and clean removal. `remove` can target a selector and/or a GitHub/local install source recorded in the lockfile.
 
 ## Artifact layouts (how to create installable tools)
 

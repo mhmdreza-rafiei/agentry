@@ -3,7 +3,9 @@ import { execSync } from 'node:child_process';
 import https from 'node:https';
 import { version, name as pkgName } from '../package.json' with { type: 'json' };
 import { ARTIFACT_KINDS, type ArtifactKind } from './core/types.js';
-import { cmdAdd, cmdAddProfile, cmdRemove, cmdList, cmdListInstalled, cmdUpdateAssets, type CliOpts } from './commands.js';
+import {
+  cmdAdd, cmdAddProfile, cmdRemove, cmdList, cmdListInstalled, cmdUpdateAssets, cmdInit, type CliOpts,
+} from './commands.js';
 import { animateLogo, theme, printHelp } from './ui/theme.js';
 import * as ui from './ui/prompts.js';
 
@@ -13,8 +15,22 @@ interface ParsedArgs {
   flags: Record<string, boolean | string>;
 }
 
+function takeOptValue(argv: string[], i: number): { value: string | true; next: number } {
+  const next = argv[i + 1];
+  if (next && !next.startsWith('-')) return { value: next, next: i + 1 };
+  return { value: true, next: i };
+}
+
 function parseArgs(argv: string[]): ParsedArgs {
-  const opts: CliOpts = { scope: 'project', agents: [], copy: false, dryRun: false, yes: false, all: false };
+  const opts: CliOpts = {
+    scope: 'project',
+    agents: [],
+    copy: false,
+    dryRun: false,
+    yes: false,
+    all: false,
+    initKinds: {},
+  };
   const positional: string[] = [];
   const flags: Record<string, boolean | string> = {};
   for (let i = 0; i < argv.length; i++) {
@@ -27,6 +43,34 @@ function parseArgs(argv: string[]): ParsedArgs {
     else if (a === '-l' || a === '--list') { opts.dryRun = true; flags.list = true; }
     else if (a === '--copy') { opts.copy = true; flags.copy = true; }
     else if (a === '--all') { opts.all = true; flags.all = true; }
+    else if (a === '--description') { opts.description = argv[++i]; flags.description = opts.description!; }
+    else if (a === '--alwaysApply' || a === '--always-apply') { opts.alwaysApply = true; flags.alwaysApply = true; }
+    else if (a === '--reference') { opts.reference = true; flags.reference = true; }
+    else if (a === '--no-reference') { opts.reference = false; flags.reference = false; }
+    else if (a === '--skills') {
+      const { value, next } = takeOptValue(argv, i);
+      opts.initKinds!.skills = value;
+      i = next;
+      flags.skills = true;
+    }
+    else if (a === '--agents') {
+      const { value, next } = takeOptValue(argv, i);
+      opts.initKinds!.agents = value;
+      i = next;
+      flags.agents = true;
+    }
+    else if (a === '--rules') {
+      const { value, next } = takeOptValue(argv, i);
+      opts.initKinds!.rules = value;
+      i = next;
+      flags.rules = true;
+    }
+    else if (a === '--scripts') {
+      const { value, next } = takeOptValue(argv, i);
+      opts.initKinds!.scripts = value;
+      i = next;
+      flags.scripts = true;
+    }
     else if (a === '-v' || a === '--version') { flags.version = true; }
     else if (a === '-h' || a === '--help') { flags.help = true; }
     else positional.push(a);
@@ -105,7 +149,7 @@ async function main(): Promise<void> {
   if (action === 'list') {
     if (positional.length === 1) { cmdListInstalled(opts); return; }
     const k = positional[2] ? normalizeKind(positional[2]) : undefined;
-    cmdList(positional[1]!, k && isKind(k) ? k as ArtifactKind : undefined);
+    await cmdList(positional[1]!, k && isKind(k) ? k as ArtifactKind : undefined, opts);
     return;
   }
   if (action === 'add') {
@@ -120,7 +164,14 @@ async function main(): Promise<void> {
     const kind = positional[1] ? normalizeKind(positional[1]) : undefined;
     if (!kind) throw new Error('Missing kind. e.g. agentry remove skills enhance-prompt');
     if (kind !== 'all' && !isKind(kind)) throw new Error(`Unknown kind: ${kind}`);
-    await cmdRemove(kind as ArtifactKind | 'all', positional[2], opts);
+    await cmdRemove(kind as ArtifactKind | 'all', positional[2], positional[3], opts);
+    return;
+  }
+  if (action === 'init') {
+    const kind = positional[1] ? normalizeKind(positional[1]) : undefined;
+    if (!kind || !isKind(kind)) throw new Error('Missing kind. e.g. agentry init skill my-skill [category]');
+    // agentry init skills name [category]  OR  init skills category name — name first, category second.
+    await cmdInit(kind, positional[2], positional[3], opts);
     return;
   }
   ui.err(`Unknown action: ${action}`); printHelp(); process.exit(1);

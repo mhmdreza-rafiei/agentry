@@ -1,11 +1,12 @@
 /**
  * Searchable multiselect with fixed viewport + info box.
- * Adapted from vercel-labs/skills, themed for Agentry (blue primary).
+ * Adapted from vercel-labs/skills, themed for Agentry (sky primary).
  */
 import * as readline from 'node:readline';
 import { stripVTControlCharacters } from 'node:util';
 import { Writable } from 'node:stream';
 import pc from 'picocolors';
+import { sky } from './theme.js';
 
 const silentOutput = new Writable({
   write(_chunk, _encoding, callback) {
@@ -32,6 +33,8 @@ export interface LockedSection<T = string> {
   title: string;
   items: SearchItem<T>[];
   hiddenCount?: number;
+  /** When set, render one summary line instead of listing names (avoids tall frames / Windows redraw bugs). */
+  compact?: boolean;
 }
 
 export interface SearchMultiselectOptions<T = string> {
@@ -55,15 +58,15 @@ export interface SearchMultiselectOptions<T = string> {
 export const cancelSymbol = Symbol('cancel');
 export const ALL_VALUE = '__all__';
 
-const BLUE = pc.blue;
-const BLUE_BOLD = (s: string) => pc.bold(pc.blue(s));
-const S_STEP_ACTIVE = BLUE('◆');
+const BLUE = sky;
+const BLUE_BOLD = (s: string) => pc.bold(sky(s));
+const S_STEP_ACTIVE = sky('◆');
 const S_STEP_CANCEL = pc.red('■');
-const S_STEP_SUBMIT = BLUE('◇');
-const S_RADIO_ACTIVE = BLUE('●');
+const S_STEP_SUBMIT = sky('◇');
+const S_RADIO_ACTIVE = sky('●');
 const S_RADIO_INACTIVE = pc.dim('○');
 const S_RADIO_DISABLED = pc.dim('◌');
-const S_BULLET = BLUE('•');
+const S_BULLET = sky('•');
 const S_BAR = pc.dim('│');
 const S_BAR_H = pc.dim('─');
 const S_CORNER = pc.dim('└');
@@ -195,7 +198,7 @@ function renderInfoBox(fields: DetailField[], innerWidth: number, rows: number):
       return `${S_BOX_V} ${' '.repeat(contentWidth)} ${S_BOX_V}`;
     }
     const labelPart = r.label
-      ? `${pc.blue(padPlain(r.label, labelW))} `
+      ? `${sky(padPlain(r.label, labelW))} `
       : `${' '.repeat(labelW)} `;
     const valuePart = r.cont ? pc.dim(r.value) : pc.bold(r.value);
     const content = `${labelPart}${valuePart}`;
@@ -292,6 +295,7 @@ export async function searchMultiselect<T = string>(
 
     if (process.stdin.isTTY) process.stdin.setRawMode(true);
     readline.emitKeypressEvents(process.stdin, rl);
+    if (process.stdout.isTTY) process.stdout.write('\x1b[?25l'); // hide cursor while redrawing
 
     let query = '';
     let cursor = 0;
@@ -321,6 +325,61 @@ export async function searchMultiselect<T = string>(
       return allMatches && allItem ? [allItem, ...matched] : matched;
     };
 
+    const lockedTotal = lockedSection
+      ? lockedSection.items.length + (lockedSection.hiddenCount ?? 0)
+      : 0;
+
+    const selectedSummaryLine = (allOn: boolean): string => {
+      if (allOn) {
+        const extra = lockedTotal
+          ? `Universal (${lockedTotal}) + All additional (${uniqueItems.length})`
+          : `All ${uniqueItems.length}`;
+        return `${S_BAR} ${BLUE('Selected:')} ${pc.bold(extra)}`;
+      }
+      const labels = uniqueItems
+        .filter((item) => selected.has(item.value))
+        .map((item) => item.label);
+      if (labels.length === 0) {
+        if (requiredFlash) {
+          return `${S_BAR} ${pc.red('Selected: pick at least one')}`;
+        }
+        if (lockedTotal > 0) {
+          return `${S_BAR} ${BLUE('Selected:')} ${pc.bold(`Universal (${lockedTotal})`)}`;
+        }
+        return `${S_BAR} ${pc.dim('Selected: (none)')}`;
+      }
+      const prefix = lockedTotal > 0 ? `Universal (${lockedTotal}) + ` : '';
+      const summary =
+        labels.length <= 3
+          ? labels.join(', ')
+          : `${labels.slice(0, 3).join(', ')} +${labels.length - 3} more`;
+      return `${S_BAR} ${BLUE('Selected:')} ${prefix}${summary}`;
+    };
+
+    const submitSummary = (allOn: boolean): string => {
+      if (allOn) {
+        return lockedTotal
+          ? `Universal (${lockedTotal}) + All additional (${uniqueItems.length})`
+          : `All (${uniqueItems.length})`;
+      }
+      const labels = uniqueItems
+        .filter((item) => selected.has(item.value))
+        .map((item) => item.label);
+      if (labels.length === 0) {
+        return lockedTotal > 0 ? `Universal (${lockedTotal})` : 'none';
+      }
+      const prefix = lockedTotal > 0 ? `Universal (${lockedTotal}) + ` : '';
+      return prefix + (labels.length <= 5 ? labels.join(', ') : `${labels.slice(0, 5).join(', ')} +${labels.length - 5}`);
+    };
+
+    const clearPrevious = (rows: number): void => {
+      if (rows <= 0) return;
+      // Line-by-line clear — reliable on Windows when the frame is tall / scrolled.
+      for (let i = 0; i < rows; i++) {
+        process.stdout.write('\x1b[1A\x1b[2K');
+      }
+    };
+
     const render = (state: 'active' | 'submit' | 'cancel' = 'active'): void => {
       const lines: string[] = [];
       const filtered = getFiltered();
@@ -331,17 +390,13 @@ export async function searchMultiselect<T = string>(
       lines.push(`${S_BAR}`);
 
       if (state === 'active') {
-        if (lockedSection && lockedSection.items.length > 0) {
-          const lockedTitle = `${pc.bold(lockedSection.title)} ${pc.dim('── always included')}`;
-          lines.push(`${S_BAR} ${S_BAR_H}${S_BAR_H} ${lockedTitle} ${S_BAR_H.repeat(8)}`);
-          for (const item of lockedSection.items.slice(0, 3)) {
-            lines.push(`${S_BAR} ${S_BULLET} ${pc.bold(item.label)}`);
-          }
-          const more =
-            (lockedSection.hiddenCount ?? 0) + Math.max(0, lockedSection.items.length - 3);
-          if (more > 0) lines.push(`${S_BAR} ${pc.dim(`…and ${more} more`)}`);
-          lines.push(`${S_BAR}`);
-          lines.push(`${S_BAR} ${S_BAR_H}${S_BAR_H} ${pc.bold('Additional')} ${S_BAR_H.repeat(26)}`);
+        if (lockedSection && lockedTotal > 0) {
+          // One line only — listing names made the frame taller than the viewport and
+          // broke Windows cursor-up clears (stacked duplicate prompts).
+          lines.push(
+            `${S_BAR} ${S_BULLET} ${pc.bold(lockedSection.title)} ${pc.dim(`· ${lockedTotal} always included`)}`,
+          );
+          lines.push(`${S_BAR} ${pc.bold('Additional')}`);
           lines.push(`${S_BAR}`);
         }
 
@@ -408,46 +463,26 @@ export async function searchMultiselect<T = string>(
 
         if (showSelectedSummary) {
           lines.push(`${S_BAR}`);
-          if (allOn) {
-            lines.push(
-              `${S_BAR} ${BLUE('Selected:')} ${pc.bold(`All ${uniqueItems.length}`)}`,
-            );
-          } else {
-            const labels = uniqueItems
-              .filter((item) => selected.has(item.value))
-              .map((item) => item.label);
-            if (labels.length === 0) {
-              lines.push(
-                `${S_BAR} ${requiredFlash ? pc.red('Selected: pick at least one') : pc.dim('Selected: (none)')}`,
-              );
-            } else {
-              const summary =
-                labels.length <= 3
-                  ? labels.join(', ')
-                  : `${labels.slice(0, 3).join(', ')} +${labels.length - 3} more`;
-              lines.push(`${S_BAR} ${BLUE('Selected:')} ${summary}`);
-            }
-          }
+          lines.push(selectedSummaryLine(allOn));
         }
 
         lines.push(`${S_CORNER}`);
       } else if (state === 'submit') {
-        const labels = allOn
-          ? [`All (${uniqueItems.length})`]
-          : uniqueItems.filter((item) => selected.has(item.value)).map((item) => item.label);
-        lines.push(`${S_BAR} ${pc.dim(labels.join(', ') || 'none')}`);
+        lines.push(`${S_BAR} ${pc.dim(submitSummary(allOn))}`);
       } else {
         lines.push(`${S_BAR} ${pc.strikethrough(pc.dim('Cancelled'))}`);
       }
 
-      const clearPreviousFrame = lastRenderHeight > 0 ? `\x1b[${lastRenderHeight}A\x1b[J` : '';
-      process.stdout.write(clearPreviousFrame + lines.join('\n') + '\n');
+      clearPrevious(lastRenderHeight);
+      const out = lines.join('\n') + '\n';
+      process.stdout.write(out);
       lastRenderHeight = countVisualRowsForLines(lines, process.stdout.columns);
     };
 
     const cleanup = (): void => {
       process.stdin.removeListener('keypress', keypressHandler);
       if (process.stdin.isTTY) process.stdin.setRawMode(false);
+      if (process.stdout.isTTY) process.stdout.write('\x1b[?25h'); // show cursor
       rl.close();
     };
 

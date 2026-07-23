@@ -1,9 +1,30 @@
 import * as clack from '@clack/prompts';
+import * as readline from 'node:readline';
 import c from 'picocolors';
-import { badge, delay } from './theme.js';
+import { badge, delay, sky } from './theme.js';
 import { isCI } from './detect.js';
 import { searchMultiselect, cancelSymbol, type SearchItem, type DetailField } from './search_multiselect.js';
 import type { Artifact, AgentConfig } from '../core/types.js';
+
+export type AgentAction = 'install' | 'remove' | 'update';
+
+export function agentsPrompt(action: AgentAction): string {
+  if (action === 'remove') return 'Which agents do you want to remove from?';
+  if (action === 'update') return 'Which agents do you want to update for?';
+  return 'Which agents do you want to install to?';
+}
+
+export function actionGerund(action: AgentAction): string {
+  if (action === 'remove') return 'removing';
+  if (action === 'update') return 'updating';
+  return 'installing';
+}
+
+export function actionNoun(action: AgentAction): string {
+  if (action === 'remove') return 'remove';
+  if (action === 'update') return 'update';
+  return 'install';
+}
 
 export function isQuiet(): boolean {
   return isCI() || !process.stdout.isTTY;
@@ -28,9 +49,73 @@ export function outro(message: string): void {
 
 export async function confirm(message: string): Promise<boolean> {
   if (isQuiet()) return true;
-  const res = await clack.confirm({ message, initialValue: true });
-  if (clack.isCancel(res)) return false;
-  return res as boolean;
+  // Custom sky confirm — @clack/prompts defaults to green.
+  return new Promise((resolve) => {
+    if (!process.stdin.isTTY) {
+      resolve(true);
+      return;
+    }
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    process.stdin.setRawMode(true);
+    readline.emitKeypressEvents(process.stdin, rl);
+
+    let value = true;
+    let lastH = 0;
+
+    const paint = (done?: 'yes' | 'no' | 'cancel') => {
+      const lines: string[] = [];
+      if (done === 'cancel') {
+        lines.push(`${sky('■')} ${c.bold(message)}`);
+        lines.push(`${c.dim('│')} ${c.strikethrough(c.dim('Cancelled'))}`);
+      } else if (done === 'yes' || done === 'no') {
+        lines.push(`${sky('◇')} ${c.bold(message)}`);
+        lines.push(`${c.dim('│')} ${c.dim(done === 'yes' ? 'Yes' : 'No')}`);
+      } else {
+        lines.push(`${sky('◆')} ${c.bold(message)}`);
+        lines.push(`${c.dim('│')}`);
+        const yes = value ? sky(c.bold('● Yes')) : c.dim('○ Yes');
+        const no = !value ? sky(c.bold('● No')) : c.dim('○ No');
+        lines.push(`${c.dim('│')}  ${yes}  /  ${no}`);
+        lines.push(`${c.dim('└')} ${c.dim('←/→ toggle · enter confirm')}`);
+      }
+      if (lastH > 0) {
+        for (let i = 0; i < lastH; i++) process.stdout.write('\x1b[1A\x1b[2K');
+      }
+      process.stdout.write(lines.join('\n') + '\n');
+      lastH = lines.length;
+    };
+
+    const cleanup = () => {
+      process.stdin.removeListener('keypress', onKey);
+      process.stdin.setRawMode(false);
+      rl.close();
+    };
+
+    const onKey = (_s: string, key: readline.Key) => {
+      if (!key) return;
+      if (key.name === 'left' || key.name === 'right' || key.name === 'tab') {
+        value = !value;
+        paint();
+        return;
+      }
+      if (key.name === 'y') { value = true; paint(); return; }
+      if (key.name === 'n') { value = false; paint(); return; }
+      if (key.name === 'return') {
+        paint(value ? 'yes' : 'no');
+        cleanup();
+        resolve(value);
+        return;
+      }
+      if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
+        paint('cancel');
+        cleanup();
+        resolve(false);
+      }
+    };
+
+    process.stdin.on('keypress', onKey);
+    paint();
+  });
 }
 
 export function log(message: string): void {
@@ -47,7 +132,7 @@ export function blank(): void {
 export async function sectionTransition(doneLabel: string, nextLabel: string): Promise<void> {
   if (isQuiet()) return;
   blank();
-  log(`${c.blue('◇')} ${c.dim('Done:')} ${c.bold(doneLabel)}`);
+  log(`${sky('◇')} ${c.dim('Done:')} ${c.bold(doneLabel)}`);
   await delay(320);
 
   // Draw a short animated rail so attention moves downward.
@@ -58,15 +143,15 @@ export async function sectionTransition(doneLabel: string, nextLabel: string): P
   }
   await delay(200);
 
-  log(`${c.blue('◆')} ${c.bold('Next:')} ${nextLabel}`);
+  log(`${sky('◆')} ${c.bold('Next:')} ${nextLabel}`);
   await delay(420);
   blank();
 }
 export function step(message: string): void {
-  process.stdout.write(`  ${c.blue('→')} ${message}\n`);
+  process.stdout.write(`  ${sky('→')} ${message}\n`);
 }
 export function ok(message: string): void {
-  process.stdout.write(`${c.blue('✓')} ${message}\n`);
+  process.stdout.write(`${sky('✓')} ${message}\n`);
 }
 export function err(message: string): void {
   process.stdout.write(`${c.red('✗')} ${message}\n`);
@@ -75,7 +160,7 @@ export function warn(message: string): void {
   process.stdout.write(`${c.yellow('⚠')} ${message}\n`);
 }
 export function info(message: string): void {
-  process.stdout.write(`${c.blue('ℹ')} ${message}\n`);
+  process.stdout.write(`${sky('ℹ')} ${message}\n`);
 }
 
 /** Blue spinner (no clack green). */
@@ -88,18 +173,18 @@ export async function spinner<T>(
   if (isQuiet()) {
     process.stdout.write(c.dim(`• ${startMsg}...`) + '\n');
     const r = await fn();
-    if (stopWith) process.stdout.write(`${c.blue('◇')} ${stopWith(r)}\n`);
+    if (stopWith) process.stdout.write(`${sky('◇')} ${stopWith(r)}\n`);
     return r;
   }
 
   const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let i = 0;
   let alive = true;
-  process.stdout.write(`${c.blue(frames[0])} ${startMsg}`);
+  process.stdout.write(`${sky(frames[0]!)} ${startMsg}`);
   const tick = setInterval(() => {
     if (!alive) return;
     i = (i + 1) % frames.length;
-    process.stdout.write(`\r${c.blue(frames[i]!)} ${startMsg}   `);
+    process.stdout.write(`\r${sky(frames[i]!)} ${startMsg}   `);
   }, 80);
 
   const started = Date.now();
@@ -110,7 +195,7 @@ export async function spinner<T>(
     alive = false;
     clearInterval(tick);
     const msg = stopWith ? stopWith(result) : startMsg;
-    process.stdout.write(`\r\x1b[K${c.blue('◇')} ${msg}\n`);
+    process.stdout.write(`\r\x1b[K${sky('◇')} ${msg}\n`);
     return result;
   } catch (e) {
     alive = false;
@@ -222,26 +307,27 @@ export async function selectAgents(
     universal.length > 0
       ? {
           title: 'Universal',
-          items: universal.slice(0, 6).map((a) => ({
+          // All values for selection; UI renders as one compact line.
+          items: universal.map((a) => ({
             value: a.name,
             label: a.displayName,
             fields: agentFields(a, true),
           })),
-          hiddenCount: Math.max(0, universal.length - 6),
+          compact: true,
         }
       : undefined;
 
-  // Pre-select detected (visible in the list) — not All.
+  // Keep the frame short so Windows terminals never scroll (scroll + redraw = stacked prompts).
   const res = await searchMultiselect({
     message,
     items,
-    maxVisible: 8,
+    maxVisible: 5,
     required: false,
     initialSelected: detected.map((d) => d.name),
     lockedSection: locked,
     searchable: true,
     showDetail: true,
-    detailLines: 8,
+    detailLines: 4,
     showSelectedSummary: true,
     includeAllOption: true,
     allLabel: `All additional (${uniqueOthers.length})`,
@@ -272,13 +358,13 @@ export function installSummary(
   blank();
   const bar = c.dim('│');
   const corner = c.dim('└');
-  log(`${c.blue('◆')} ${c.bold('Install summary')}`);
+  log(`${sky('◆')} ${c.bold('Install summary')}`);
   log(bar);
-  log(`${bar}  ${c.blue('Scope')}      ${scopeLabel}`);
+  log(`${bar}  ${sky('Scope')}      ${scopeLabel}`);
   const universalCount = agents.filter((a) => a.skillsDir === '.agents/skills').length;
   const otherCount = agents.length - universalCount;
   log(
-    `${bar}  ${c.blue('Targets')}    ${agents.length} agent${agents.length === 1 ? '' : 's'}` +
+    `${bar}  ${sky('Targets')}    ${agents.length} agent${agents.length === 1 ? '' : 's'}` +
       c.dim(` · ${universalCount} universal` + (otherCount ? ` · ${otherCount} additional` : '')),
   );
   // Short name list — wrap-friendly, not one giant line.
@@ -301,7 +387,7 @@ export function installSummary(
   log(bar);
   for (const a of artifacts) {
     const desc = (a.description || '').replace(/\s+/g, ' ').trim().slice(0, 52);
-    log(`${bar}  ${c.blue('•')} ${c.bold(`${a.kind}/${a.id}`)}`);
+    log(`${bar}  ${sky('•')} ${c.bold(`${a.kind}/${a.id}`)}`);
     if (desc) log(`${bar}    ${c.dim(desc)}`);
   }
   log(bar);

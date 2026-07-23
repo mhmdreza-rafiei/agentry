@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, symlinkSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import type { LockFile, LockEntry, InstallOpts, Artifact, AgentConfig } from './types.js';
 import { getAgent } from '../registry/agents.js';
+import { sourcesEqual } from './source_parser.js';
 
 const home = homedir();
 
@@ -46,9 +47,77 @@ function removeLegacyLockIfPresent(opts: Pick<InstallOpts, 'scope' | 'dir'>): vo
 
 export function writeLock(opts: Pick<InstallOpts, 'scope' | 'dir'>, lock: LockFile): void {
   const file = lockPath(opts);
+  // Empty lock → drop the whole `.agentry` folder instead of leaving lock.json with {}.
+  if (!Object.keys(lock.items).length) {
+    const dir = join(lockBase(opts), '.agentry');
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+    removeLegacyLockIfPresent(opts);
+    return;
+  }
   mkdirSync(join(file, '..'), { recursive: true });
   writeFileSync(file, JSON.stringify(lock, null, 2) + '\n');
   removeLegacyLockIfPresent(opts);
+}
+
+/**
+ * True when a directory has no meaningful files.
+ * Empty nested folders count as empty. An empty lock.json (items: {}) is ignored.
+ */
+export function isDirTreeEmpty(dir: string): boolean {
+  if (!existsSync(dir)) return true;
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return true;
+  }
+  for (const name of entries) {
+    const p = join(dir, name);
+    let st;
+    try {
+      st = statSync(p);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (!isDirTreeEmpty(p)) return false;
+      continue;
+    }
+    if (st.isFile()) {
+      if (name === 'lock.json') {
+        try {
+          const data = JSON.parse(readFileSync(p, 'utf8')) as LockFile;
+          if (data && typeof data === 'object' && Object.keys(data.items || {}).length === 0) continue;
+        } catch {
+          return false;
+        }
+        return false; // lock with items
+      }
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * If `dir` is an empty tree, delete it and walk parents up to (but not including) `stopAt`.
+ */
+export function pruneEmptyAncestors(dir: string, stopAt: string, removedPaths: string[] = []): string[] {
+  const stop = resolve(stopAt);
+  let cur = resolve(dir);
+  while (cur.length > stop.length) {
+    const prefix = stop.endsWith(sep) ? stop : stop + sep;
+    if (!cur.toLowerCase().startsWith(prefix.toLowerCase()) && cur.toLowerCase() !== stop.toLowerCase()) break;
+    if (!existsSync(cur)) {
+      cur = dirname(cur);
+      continue;
+    }
+    if (!isDirTreeEmpty(cur)) break;
+    rmSync(cur, { recursive: true, force: true });
+    removedPaths.push(cur);
+    cur = dirname(cur);
+  }
+  return removedPaths;
 }
 
 export function listInstalled(opts: Pick<InstallOpts, 'scope' | 'dir'>): (LockEntry & { id: string })[] {
@@ -98,22 +167,16 @@ export function installOne(
 
   if (artifact.kind === 'skill') {
     // Universal + symlink system (mirrors vercel-labs/skills):
-    // install ONCE to the canonical .agents/skills/<id>, then symlink
-    // non-universal agent dirs to it. Universal agents share the canonical.
+    // Always COPY into canonical .agents/skills/<id> (source may be a temp clone).
+    // Non-universal agents symlink/copy from the stable canonical dir.
     const canonical = join(base, '.agents', 'skills', artifact.id);
     rmSync(canonical, { recursive: true, force: true });
     mkdirSync(join(canonical, '..'), { recursive: true });
-    if (opts.copy) {
-      cpSync(artifact.dir, canonical, { recursive: true });
-    } else {
-      try { symlinkSync(artifact.dir, canonical, 'junction' as any); } catch { cpSync(artifact.dir, canonical, { recursive: true }); }
-    }
+    cpSync(artifact.dir, canonical, { recursive: true });
     for (const a of list) {
       if (a.skillsDir === '.agents/skills') {
-        // universal agent: shares the canonical dir directly
         dests.push({ agent: a.name, dir: canonical });
       } else {
-        // non-universal agent: symlink its skillsDir/<id> -> canonical (or copy if --copy).
         const dir = join(base, a.skillsDir, artifact.id);
         rmSync(dir, { recursive: true, force: true });
         mkdirSync(join(dir, '..'), { recursive: true });
@@ -127,16 +190,12 @@ export function installOne(
       }
     }
   } else {
-    // agents/rules/profiles/scripts: per-agent install (no universal dir for these).
+    // agents/rules/profiles/scripts: per-agent install (always copy — source may be temp).
     for (const a of list) {
       const dir = agentDir(artifact, a, base);
       rmSync(dir, { recursive: true, force: true });
       mkdirSync(join(dir, '..'), { recursive: true });
-      if (opts.copy) {
-        cpSync(artifact.dir, dir, { recursive: true });
-      } else {
-        try { symlinkSync(artifact.dir, dir, 'junction' as any); } catch { cpSync(artifact.dir, dir, { recursive: true }); }
-      }
+      cpSync(artifact.dir, dir, { recursive: true });
       dests.push({ agent: a.name, dir });
     }
   }
@@ -163,44 +222,148 @@ function agentDir(artifact: Artifact, a: AgentConfig, base: string): string {
 }
 
 // Remove a kind, category, or single artifact. Works from lockfile/filesystem; no source needed.
+// Optional `sourceFilter` limits removal to lock entries matching that install source (GitHub or local).
+// Skills always delete the canonical `.agents/skills/<id>` plus any non-universal copies/symlinks.
 export function removeSelection(
   kind: string,
   selector: string | undefined,
   opts: InstallOpts,
   agentList: AgentConfig[],
-): { existed: boolean; removedKeys: string[] } {
+  sourceFilter?: string,
+): { existed: boolean; removedKeys: string[]; removedPaths: string[] } {
   const base = lockBase(opts);
   const list = agentList.length ? agentList : [getAgent('cursor')!];
   const rel = [kind, selector].filter(Boolean).join('/');
   const removedKeys: string[] = [];
+  const removedPaths: string[] = [];
   const lock = readLock(opts);
-  const pkind = pluralKind(kind);
 
-  for (const a of list) {
-    let dir: string;
-    if (kind === 'skill') {
-      dir = join(base, a.skillsDir, selector || '');
-    } else if (kind === 'agent' || kind === 'rule' || kind === 'profile') {
-      const ext = kind === 'profile' ? '.yaml' : '.mdc';
-      if (!selector) dir = join(base, a.configDir || a.skillsDir, pkind);
-      else if (selector.includes('/')) {
-        const [cat, name] = selector.split('/');
-        dir = join(base, a.configDir || a.skillsDir, pkind, cat!, name + ext);
-      } else {
-        dir = join(base, a.configDir || a.skillsDir, pkind, selector + ext);
+  const matchingKeys = Object.keys(lock.items).filter((key) => {
+    const entry = lock.items[key]!;
+    if (sourceFilter && !sourcesEqual(entry.source, sourceFilter)) return false;
+    if (kind === 'all') return true;
+    if (key === rel || key.startsWith(rel + '/')) return true;
+    if (!selector && key.startsWith(kind + '/')) return true;
+    return false;
+  });
+
+  const rmPath = (p: string) => {
+    if (!p || !existsSync(p)) return;
+    const parent = dirname(p);
+    rmSync(p, { recursive: true, force: true });
+    removedPaths.push(p);
+    // Drop empty category/kind/.agents parents (e.g. skills/ → .agents/).
+    pruneEmptyAncestors(parent, base, removedPaths);
+  };
+
+  const agentsFor = (entry: LockEntry): AgentConfig[] => {
+    const fromEntry = entry.agents
+      .map((n) => getAgent(n))
+      .filter(Boolean) as AgentConfig[];
+    const byName = new Map<string, AgentConfig>();
+    for (const a of [...fromEntry, ...list]) byName.set(a.name, a);
+    return [...byName.values()];
+  };
+
+  const removeFilesForKey = (key: string, entry: LockEntry) => {
+    const parts = key.split('/');
+    const k = parts[0]!;
+    const sel = parts.slice(1).join('/') || undefined;
+    if (!sel && k === 'skill') return; // never wipe entire .agents/skills
+
+    const agents = agentsFor(entry);
+
+    if (k === 'skill' && sel) {
+      // Canonical install lives here for every universal provider.
+      rmPath(join(base, '.agents', 'skills', sel));
+      for (const a of agents) {
+        if (a.skillsDir === '.agents/skills') continue;
+        rmPath(join(base, a.skillsDir, sel));
       }
-    } else {
-      dir = join(base, a.configDir || a.skillsDir, pkind, selector || '');
+      return;
     }
-    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+
+    for (const a of agents) {
+      if (k === 'agent' || k === 'rule' || k === 'profile') {
+        const ext = k === 'profile' ? '.yaml' : '.mdc';
+        if (!sel) {
+          rmPath(join(base, a.configDir || a.skillsDir, pluralKind(k)));
+        } else if (sel.includes('/')) {
+          const [cat, name] = sel.split('/');
+          rmPath(join(base, a.configDir || a.skillsDir, pluralKind(k), cat!, name + ext));
+        } else {
+          rmPath(join(base, a.configDir || a.skillsDir, pluralKind(k), sel + ext));
+        }
+      } else if (sel) {
+        rmPath(join(base, a.configDir || a.skillsDir, pluralKind(k), sel));
+      }
+    }
+  };
+
+  for (const key of matchingKeys) {
+    const entry = lock.items[key]!;
+    removeFilesForKey(key, entry);
+    delete lock.items[key];
+    removedKeys.push(key);
   }
 
-  for (const key of Object.keys(lock.items)) {
-    if (key === rel || key.startsWith(rel + '/')) {
-      delete lock.items[key];
-      removedKeys.push(key);
+  // Fallback: no lock matches and no source filter — remove by filesystem path (legacy).
+  if (!removedKeys.length && !sourceFilter) {
+    if (kind === 'skill') {
+      rmPath(join(base, '.agents', 'skills', selector || ''));
+    }
+    for (const a of list) {
+      let dir: string;
+      if (kind === 'skill') {
+        if (a.skillsDir === '.agents/skills') continue;
+        dir = join(base, a.skillsDir, selector || '');
+      } else if (kind === 'agent' || kind === 'rule' || kind === 'profile') {
+        const ext = kind === 'profile' ? '.yaml' : '.mdc';
+        if (!selector) dir = join(base, a.configDir || a.skillsDir, pluralKind(kind));
+        else if (selector.includes('/')) {
+          const [cat, name] = selector.split('/');
+          dir = join(base, a.configDir || a.skillsDir, pluralKind(kind), cat!, name + ext);
+        } else {
+          dir = join(base, a.configDir || a.skillsDir, pluralKind(kind), selector + ext);
+        }
+      } else {
+        dir = join(base, a.configDir || a.skillsDir, pluralKind(kind), selector || '');
+      }
+      if (existsSync(dir)) {
+        rmPath(dir);
+        if (!removedKeys.includes(rel)) removedKeys.push(rel);
+      }
+    }
+    for (const key of Object.keys(lock.items)) {
+      if (key === rel || key.startsWith(rel + '/')) {
+        delete lock.items[key];
+        if (!removedKeys.includes(key)) removedKeys.push(key);
+      }
     }
   }
+
   writeLock(opts, lock);
-  return { existed: removedKeys.length > 0, removedKeys };
+
+  // Extra sweep: common install roots may be left as empty shells.
+  const sweepRoots = new Set<string>([
+    join(base, '.agents', 'skills'),
+    join(base, '.agents'),
+    join(base, '.agentry'),
+  ]);
+  for (const a of list) {
+    sweepRoots.add(join(base, a.skillsDir));
+    if (a.configDir) {
+      sweepRoots.add(join(base, a.configDir));
+      for (const pk of ['skills', 'agents', 'rules', 'profiles', 'scripts']) {
+        sweepRoots.add(join(base, a.configDir, pk));
+      }
+    }
+  }
+  for (const root of sweepRoots) {
+    if (existsSync(root) && isDirTreeEmpty(root)) {
+      pruneEmptyAncestors(root, base, removedPaths);
+    }
+  }
+
+  return { existed: removedKeys.length > 0 || removedPaths.length > 0, removedKeys, removedPaths };
 }

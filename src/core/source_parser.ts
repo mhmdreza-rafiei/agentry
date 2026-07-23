@@ -53,3 +53,38 @@ export function parseSource(source: string): ParsedSource {
 
   throw new Error(`Cannot parse source "${source}". Use author/repo, a GitHub/GitLab URL, a git URL, or a local path.`);
 }
+
+/** Normalize a source string for lockfile matching (URL/path identity). */
+export function sourceIdentity(source: string): string {
+  try {
+    const p = parseSource(source);
+    if (p.kind === 'local' && p.local) return `local:${resolve(p.local).replace(/\\/g, '/').toLowerCase()}`;
+    const url = (p.url || '').replace(/\.git$/i, '').replace(/\/+$/, '').toLowerCase();
+    const sub = p.subpath ? `/${p.subpath.replace(/^\/+|\/+$/g, '')}` : '';
+    const ref = p.ref ? `@${p.ref}` : '';
+    return `git:${url}${sub}${ref}`;
+  } catch {
+    return `raw:${source.trim().toLowerCase()}`;
+  }
+}
+
+export function sourcesEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return sourceIdentity(a) === sourceIdentity(b);
+}
+
+/** True for local paths, URLs, git@ — not ambiguous author/repo vs category/name. */
+export function isExplicitSource(arg: string): boolean {
+  if (!arg) return false;
+  if (isLocalPath(arg)) return true;
+  if (/^https?:\/\//i.test(arg)) return true;
+  if (arg.startsWith('git@')) return true;
+  if (/^https?:\/\/.*\.git$/i.test(arg)) return true;
+  return false;
+}
+
+/** True if arg looks like GitHub owner/repo (same shape as category/name). */
+export function isOwnerRepoShape(arg: string): boolean {
+  return /^[\w.-]+\/[\w.-]+$/.test(arg);
+}
