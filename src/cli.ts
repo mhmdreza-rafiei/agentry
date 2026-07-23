@@ -8,6 +8,7 @@ import {
 } from './commands.js';
 import { animateLogo, theme, printHelp } from './ui/theme.js';
 import * as ui from './ui/prompts.js';
+import { isExplicitSource } from './core/source_parser.js';
 
 interface ParsedArgs {
   opts: CliOpts;
@@ -147,9 +148,29 @@ async function main(): Promise<void> {
     return;
   }
   if (action === 'list') {
-    if (positional.length === 1) { cmdListInstalled(opts); return; }
-    const k = positional[2] ? normalizeKind(positional[2]) : undefined;
-    await cmdList(positional[1]!, k && isKind(k) ? k as ArtifactKind : undefined, opts);
+    // Grammar:
+    //   list                         → installed (all)
+    //   list <kind>                  → installed filtered by kind
+    //   list <source>                → discover in source
+    //   list <source> <kind>         → discover kind
+    //   list <source> <kind> <sel>   → discover selector
+    const a1 = positional[1];
+    const a2 = positional[2];
+    const a3 = positional[3];
+    if (!a1) {
+      await cmdList(undefined, undefined, undefined, opts);
+      return;
+    }
+    const k1 = normalizeKind(a1);
+    if (isKind(k1) && !isExplicitSource(a1) && !/^[\w.-]+\/[\w.-]+$/.test(a1)) {
+      // list skills [selector] — installed filter (bare kind, not owner/repo)
+      await cmdList(undefined, k1 as ArtifactKind, a2, opts);
+      return;
+    }
+    // list <source> [kind] [selector]
+    const kind = a2 ? normalizeKind(a2) : undefined;
+    if (kind && kind !== 'all' && !isKind(kind)) throw new Error(`Unknown kind: ${kind}`);
+    await cmdList(a1, kind && isKind(kind) ? (kind as ArtifactKind) : undefined, a3, opts);
     return;
   }
   if (action === 'add') {

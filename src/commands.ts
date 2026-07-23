@@ -14,7 +14,7 @@ import {
   isExplicitSource, isOwnerRepoShape, sourcesEqual, parseSource,
 } from './core/source_parser.js';
 import * as ui from './ui/prompts.js';
-import { theme } from './ui/theme.js';
+import { theme, sky } from './ui/theme.js';
 import c from 'picocolors';
 import * as clack from '@clack/prompts';
 
@@ -233,29 +233,139 @@ export async function cmdRemove(
   ui.ok(`Removed ${r.removedKeys.length} item(s)${r.removedPaths.length ? c.dim(` · ${r.removedPaths.length} path(s)`) : ''}${source ? c.dim(` from ${source}`) : ''}.`);
 }
 
-export async function cmdList(source: string, kind: ArtifactKind | undefined, opts: CliOpts): Promise<void> {
-  if (!source) throw new Error('Missing source. e.g. agentry list author/repo');
+export async function cmdList(
+  source: string | undefined,
+  kind: ArtifactKind | undefined,
+  selector: string | undefined,
+  opts: CliOpts,
+): Promise<void> {
+  // No source → installed inventory (optional kind/selector filters).
+  if (!source) {
+    cmdListInstalled(opts, kind, selector);
+    return;
+  }
+  ui.intro();
+  await ui.spinner('Parsing source\u2026', () => parseSource(source), (p) => {
+    const where = p.url || p.local || source;
+    return `${theme.primary('Source:')} ${where}${p.ref ? c.dim(` @ ${p.ref}`) : ''}${p.subpath ? c.dim(` (${p.subpath})`) : ''}`;
+  }, 420);
   const { root, cleanup } = await resolveSourceWithUi(source, opts);
   try {
-    for (const k of kind ? [kind] : ARTIFACT_KINDS) {
-      ui.log(theme.info(`${k}s:`));
-      const items = listKind(root, k);
-      if (!items.length) { ui.step('(none)'); continue; }
-      for (const it of items) {
-        const desc = (it.description || '').replace(/\s+/g, ' ').slice(0, 80);
-        ui.step(`${it.id}${desc ? ' - ' + desc : ''}`);
-      }
-    }
-  } finally { cleanup(); }
+    const artifacts = await ui.spinner(
+      'Discovering\u2026',
+      () => {
+        if (kind) return select(root, kind, selector);
+        return listAll(root);
+      },
+      (a) => `Found ${a.length} artifact${a.length === 1 ? '' : 's'}`,
+      520,
+    );
+    printArtifactList(artifacts, {
+      title: 'Available in source',
+      subtitle: source,
+    });
+  } finally {
+    cleanup();
+  }
 }
 
-export function cmdListInstalled(opts: CliOpts): void {
-  const installed = listInstalled(toInstallOpts(opts));
-  if (!installed.length) { ui.info('Nothing installed.'); return; }
-  for (const it of installed) {
-    const src = it.source ? c.dim(` ← ${it.source}`) : '';
-    ui.step(`${it.id} -> ${it.agents.join(', ')}${src}`);
+export function cmdListInstalled(
+  opts: CliOpts,
+  kind?: ArtifactKind,
+  selector?: string,
+): void {
+  ui.intro();
+  let installed = listInstalled(toInstallOpts(opts));
+  if (kind) {
+    installed = installed.filter((it) => it.kind === kind || it.id.startsWith(kind + '/'));
   }
+  if (selector && kind) {
+    const rel = `${kind}/${selector}`;
+    installed = installed.filter(
+      (it) => it.id === rel || it.id.startsWith(rel + '/') || it.id.endsWith('/' + selector) || it.id === `${kind}/${selector}`,
+    );
+  } else if (selector) {
+    installed = installed.filter((it) => it.id.includes(selector));
+  }
+  if (!installed.length) {
+    ui.info(kind || selector ? `Nothing installed matching that filter.` : 'Nothing installed.');
+    ui.step(c.dim('Try: agentry add skills mhmdreza-rafiei/agent-tools'));
+    return;
+  }
+
+  const bar = c.dim('│');
+  const corner = c.dim('└');
+  ui.blank();
+  ui.log(`${sky('◆')} ${c.bold('Installed')}`);
+  ui.log(bar);
+  ui.log(
+    `${bar}  ${sky('Scope')}   ${opts.scope === 'global' ? 'global (~)' : `project (${opts.dir || process.cwd()})`}`,
+  );
+  ui.log(`${bar}  ${sky('Total')}   ${installed.length} artifact${installed.length === 1 ? '' : 's'}`);
+  ui.log(bar);
+
+  const byKind = new Map<string, typeof installed>();
+  for (const it of installed) {
+    const k = it.kind || it.id.split('/')[0]!;
+    const arr = byKind.get(k) || [];
+    arr.push(it);
+    byKind.set(k, arr);
+  }
+  for (const k of ARTIFACT_KINDS) {
+    const items = byKind.get(k);
+    if (!items?.length) continue;
+    ui.log(`${bar}  ${c.bold(k + 's')}  ${c.dim(`(${items.length})`)}`);
+    for (const it of items) {
+      const id = it.id.includes('/') ? it.id.slice(it.id.indexOf('/') + 1) : it.id;
+      ui.log(`${bar}  ${sky('•')} ${c.bold(id)}`);
+      const agents = it.agents?.length ? it.agents.join(', ') : '—';
+      ui.log(`${bar}    ${c.dim(`agents: ${agents}`)}`);
+      if (it.source) ui.log(`${bar}    ${c.dim(`source: ${it.source}`)}`);
+    }
+    ui.log(bar);
+  }
+  ui.log(`${corner}  ${c.dim('agentry remove <kind> [source] [selector]  ·  agentry update <kind> [source]')}`);
+  ui.blank();
+}
+
+function printArtifactList(
+  artifacts: Artifact[],
+  meta: { title: string; subtitle?: string },
+): void {
+  const bar = c.dim('│');
+  const corner = c.dim('└');
+  ui.blank();
+  ui.log(`${sky('◆')} ${c.bold(meta.title)}`);
+  ui.log(bar);
+  if (meta.subtitle) ui.log(`${bar}  ${sky('From')}    ${meta.subtitle}`);
+  ui.log(`${bar}  ${sky('Total')}   ${artifacts.length}`);
+  ui.log(bar);
+  if (!artifacts.length) {
+    ui.log(`${bar}  ${c.dim('(none)')}`);
+    ui.log(bar);
+    ui.log(`${corner}`);
+    ui.blank();
+    return;
+  }
+  const byKind = new Map<string, Artifact[]>();
+  for (const a of artifacts) {
+    const arr = byKind.get(a.kind) || [];
+    arr.push(a);
+    byKind.set(a.kind, arr);
+  }
+  for (const k of ARTIFACT_KINDS) {
+    const items = byKind.get(k);
+    if (!items?.length) continue;
+    ui.log(`${bar}  ${c.bold(k + 's')}  ${c.dim(`(${items.length})`)}`);
+    for (const it of items) {
+      const desc = (it.description || '').replace(/\s+/g, ' ').trim().slice(0, 56);
+      ui.log(`${bar}  ${sky('•')} ${c.bold(it.id)}`);
+      if (desc) ui.log(`${bar}    ${c.dim(desc)}`);
+    }
+    ui.log(bar);
+  }
+  ui.log(`${corner}  ${c.dim('agentry add <kind> <source> [selector]')}`);
+  ui.blank();
 }
 
 export async function cmdUpdateAssets(
