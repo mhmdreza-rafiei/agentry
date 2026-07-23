@@ -1,24 +1,19 @@
 Progress
 -----------------
-Live state of the Agentry CLI.
+Live handoff for Agentry.
 
 ## Current state
 
-Public-ready CLI: install / list / remove / update / init for skills, agents, rules, scripts, profiles. Universal `.agents/skills` + symlinks, sky UI, git clone cache, empty-folder prune, `.agentry/lock.json`.
-
-## Done this session
-
-- Checkpoint + list feature commits.
-- Expanded `agentry list` (installed / kind / source / selector) with panel-style output.
-- Regenerated `docs/agentry-logo.png` with **Agentry** wordmark; modern public README (skills-style), examples from `mhmdreza-rafiei/agent-tools`.
-- `.gitignore` ignores local install/scaffold trees (`.agents/`, `.agentry/`, authored `skills/` etc.).
+Public-facing CLI on `main`. History rewritten to remove Cursor Agent authorship and `Co-authored-by: Cursor` trailers (per GitHub community discussion #186158). Backup at sibling `.git-backup-agentry-*` under `G:\Projects\`.
 
 ## Verify
 
-- `npm run typecheck` / `npm test` (17) / `npm run build`
-- `node dist/cli.mjs list` · `list skills`
+- No `Co-authored-by: Cursor` in `git log --all --grep=...`
+- Authors are `mhmdreza rafiei <mhmdrezacode@gmail.com>` (or user variants)
+- `npm test` / `typecheck` / `build` when touching code
 
-## External
+## Follow-ups
 
-- Push + `npm version` / `npm publish --access public` when ready.
+- Force-push rewritten history; wait for GitHub Contributors cache to refresh (can take hours/days; discussion notes it may still list Cursor briefly).
 - Confirm `mhmdreza-rafiei/agent-tools` is public for README examples.
+- Publish npm when ready (`npm version` + `npm publish --access public`).
