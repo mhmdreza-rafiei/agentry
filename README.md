@@ -1,265 +1,200 @@
 <div align="center">
 
-<img src="docs/agentry-logo.png" alt="agentry" width="800" />
+<img src="docs/agentry-logo.png" alt="Agentry" width="100%" />
 
-**A raw installer for AI agent tooling.**
+# Agentry
 
-`agentry` fetches **agents, skills, rules, scripts, and profiles** from any Git repo (or local path) and installs the ones you pick into your project — or globally — under each target provider's directory (`.cursor/`, `.claude/skills/`, `.agents/skills/`, …). The CLI ships no assets of its own; you point it at a source.
+**Install agents, skills, rules, scripts, and profiles onto coding agents — from any Git repo.**
 
-It mirrors the clean Clack-style UX of [`vercel-labs/skills`](https://github.com/vercel-labs/skills) and extends it beyond skills-only. Supports **70+ agent providers**.
+Supports **Cursor**, **Claude Code**, **Codex**, **OpenCode**, and [70+ more](#supported-agents).
 
-[![npm version](https://img.shields.io/npm/v/@mhmdreza-rafiei/agentry.svg?style=flat&color=cyan)](https://www.npmjs.com/package/@mhmdreza-rafiei/agentry)
-[![license](https://img.shields.io/badge/license-MIT-cyan.svg?style=flat)](#license)
-[![node](https://img.shields.io/badge/node-%3E%3D22.20-cyan.svg?style=flat)](#development--test)
+[![npm](https://img.shields.io/npm/v/@mhmdreza-rafiei/agentry?style=flat&color=38bdf8)](https://www.npmjs.com/package/@mhmdreza-rafiei/agentry)
+[![node](https://img.shields.io/badge/node-%3E%3D22.20-38bdf8?style=flat)](#install)
+[![license](https://img.shields.io/badge/license-MIT-38bdf8?style=flat)](LICENSE)
 [![stars](https://img.shields.io/github/stars/mhmdreza-rafiei/agentry?style=social)](https://github.com/mhmdreza-rafiei/agentry)
-
-⭐ If agentry saves you time, [star the repo](https://github.com/mhmdreza-rafiei/agentry) — it helps others find it.
 
 </div>
 
----
-
-## Install / run
+## Install
 
 ```bash
-# Run without installing (recommended)
-npx agentry@latest --help
-
-# Or install the CLI globally
-npm install -g agentry@latest
-
-# Update / uninstall the CLI
-agentry update
-agentry uninstall
+npm install -g @mhmdreza-rafiei/agentry
+# or
+npx @mhmdreza-rafiei/agentry@latest --help
 ```
 
-> Publishing to npm is pending. Until then, run from a clone: `node dist/cli.mjs …` (after `npm run build`) or `npm run dev -- …`.
-
-## Usage
-
-```
-agentry add <kind> <source> [category/name | category] [options]
-agentry add profile <name> [source] [options]
-agentry remove <kind> [source] [selector] [options]
-agentry list [source] [kind]
-agentry update [kind] [source] [selector]
-agentry init <kind> [name] [category] [options]
-agentry uninstall
-```
-
-`<kind>` is `skill | rule | agent | profile | script` (singular; plurals like `skills` are accepted and normalized). `<source>` is a GitHub shorthand `author/repo`, a full GitHub URL, a GitHub tree subdir URL, a GitLab URL, any git URL, or a local path.
+## Quick start
 
 ```bash
-agentry add skills Prat011/awesome-llm-skills                    # list all skills and pick
-agentry add skills Prat011/awesome-llm-skills video-downloader    # one skill (no category)
-agentry add skills Prat011/awesome-llm-skills document-skills/docx  # one skill (category/name)
-agentry add skills ./my-skills --list                            # preview only, no install
-agentry add skills ./my-skills prompt/enhance-prompt -a cursor -a claude-code  # install to 2 providers
-agentry add agents author/repo frontend-developer               # one agent (.mdc file)
-agentry add rules author/repo ask-dont-guess                    # one rule (.mdc file)
-agentry add scripts author/repo lint                            # one script (usecase folder)
-agentry add profile frontend author/repo                        # apply profile/frontend.yaml
-agentry remove skills document-skills/docx                      # remove by selector
-agentry remove skills vercel-labs/agent-skills                  # remove all from that source
-agentry remove skills ./my-skills prompt/enhance-prompt         # remove one from a local source
-agentry list author/repo
-agentry update                                                  # self-update (checks version first)
-agentry update skills author/repo prompt/enhance-prompt         # re-install one artifact from source
-agentry update skills                                           # re-install all skills from lockfile sources
-agentry init skill enhance-prompt prompt --reference            # scaffold skills/prompt/enhance-prompt/
-agentry init rule ask-dont-guess --alwaysApply --description "Ask first"
-agentry init profile frontend --skills vercel-labs/agent-skills -a cursor
-agentry uninstall                                               # remove the CLI
+# Browse + install skills from a repo
+agentry add skills mhmdreza-rafiei/agent-tools
+
+# Install one skill to Cursor
+agentry add skills mhmdreza-rafiei/agent-tools enhance-prompt -a cursor
+
+# See what is installed
+agentry list
+agentry list skills
 ```
 
-Flags: `-g, --global` (into `~`), `--project` (current folder, default), `--dir <path>`, `-a, --agent <name>` (repeatable; `*` for all; default: prompt to choose), `-l, --list` (preview, no install), `--copy` (copy files instead of symlinking), `--all` (install everything to all agents, no prompts), `-y, --yes` (no prompts), init flags `--description`, `--alwaysApply`, `--reference` / `--no-reference`, `--skills`/`--agents`/`--rules`/`--scripts` `[source]`, `-v, --version`, `-h, --help`.
+## Commands
 
-When you run `agentry add` without `--agent`, it shows a **fetch animation** (parsing source → discovering → found N), lets you **pick artifacts** (with an `All` toggle), then prompts **"Which agents do you want to install to?"** — universal providers (`.agents/skills`) are locked in and others are selectable, defaulting to the providers you already have installed. Remove/update use the same agent picker with action-aware wording (“remove from” / “update for”). The interactive UI is suppressed automatically when running inside an agent or CI; non-interactive runs default to the current project and auto-detected providers.
+| Command | Description |
+| --- | --- |
+| `agentry add <kind> <source> [selector]` | Discover and install artifacts |
+| `agentry add profile <name> [source]` | Apply a local `profile/<name>.yaml` bundle |
+| `agentry list` | List installed artifacts |
+| `agentry list <kind>` | List installed artifacts of one kind |
+| `agentry list <source> [kind] [selector]` | List what a repo/path contains |
+| `agentry remove <kind> [source] [selector]` | Remove installs (files + lock) |
+| `agentry update [kind] [source] [selector]` | Re-install from source or lockfile |
+| `agentry init <kind> [name] [category]` | Scaffold a new artifact |
+| `agentry update` | Update the Agentry CLI itself |
+| `agentry uninstall` | Uninstall the Agentry CLI |
 
-## How sources are discovered
+`<kind>` is `skill | rule | agent | profile | script` (plurals accepted).
 
-For each kind, `agentry` finds artifacts in two ways and merges them:
+### Source formats
 
-1. Under an explicit `<kind>s/` folder (see artifact layouts below).
-2. At the repo root by marker — a folder with `SKILL.md` is a skill; a `.mdc` file at root is an agent or rule. (Scripts and profiles are folder/file kinds found only under their `scripts/` and `profiles/` folders.)
+```bash
+# GitHub shorthand
+agentry add skills mhmdreza-rafiei/agent-tools
 
-Selectors after the source: `category/name` (one artifact), `name` (one artifact when uncategorized), `category` (whole category), or omit to list-and-pick.
+# Full GitHub URL
+agentry add skills https://github.com/mhmdreza-rafiei/agent-tools
 
-Artifacts install to the provider's directory and are tracked in `.agentry/lock.json` for idempotent installs and clean removal. `remove` can target a selector and/or a GitHub/local install source recorded in the lockfile.
+# Tree URL (subdir + ref)
+agentry add skills https://github.com/mhmdreza-rafiei/agent-tools/tree/main/skills
 
-## Artifact layouts (how to create installable tools)
+# Local path
+agentry add skills ./my-skills
 
-Create artifacts in your repo using these layouts, then `agentry add` from your repo:
-
-### Skills — folder per skill
-
+# Any git URL
+agentry add skills git@github.com:mhmdreza-rafiei/agent-tools.git
 ```
+
+### Options
+
+| Option | Description |
+| --- | --- |
+| `-g, --global` | Install into `~` (all projects) |
+| `--project` | Install into the current folder (default) |
+| `--dir <path>` | Install into a specific folder |
+| `-a, --agent <name>` | Target provider(s); repeatable; `*` = all |
+| `-l, --list` | Preview only — write nothing |
+| `--copy` | Copy instead of symlink for non-universal agents |
+| `--all` | Install everything to all agents, no prompts |
+| `-y, --yes` | Skip prompts |
+| `--description <text>` | `init`: frontmatter description |
+| `--alwaysApply` | `init` rule: `alwaysApply: true` |
+| `--reference` / `--no-reference` | `init` skill: include `references/TEMPLATE.md` |
+| `--skills` / `--agents` / `--rules` / `--scripts` `[src]` | `init` profile: include kinds (optional source) |
+
+## Examples
+
+```bash
+# List everything in a catalog repo
+agentry list mhmdreza-rafiei/agent-tools
+agentry list mhmdreza-rafiei/agent-tools skills
+agentry list mhmdreza-rafiei/agent-tools skills enhance-prompt
+
+# Install
+agentry add skills mhmdreza-rafiei/agent-tools
+agentry add skills mhmdreza-rafiei/agent-tools enhance-prompt -a cursor -a claude-code
+agentry add rules mhmdreza-rafiei/agent-tools ask-dont-guess
+agentry add agents mhmdreza-rafiei/agent-tools frontend-developer
+
+# Inventory
+agentry list
+agentry list skills
+
+# Update / remove by selector or by install source
+agentry update skills mhmdreza-rafiei/agent-tools
+agentry remove skills enhance-prompt
+agentry remove skills mhmdreza-rafiei/agent-tools
+
+# Scaffold
+agentry init skill enhance-prompt prompt --reference
+agentry init rule ask-dont-guess --alwaysApply --description "Ask before guessing"
+agentry init profile frontend --skills mhmdreza-rafiei/agent-tools -a cursor
+```
+
+Example catalog used throughout this README: [`mhmdreza-rafiei/agent-tools`](https://github.com/mhmdreza-rafiei/agent-tools).
+
+## How it works
+
+1. Resolve a source (local path or shallow git clone).
+2. Discover artifacts under `<kind>s/` **and** root markers (`SKILL.md`, `.mdc`).
+3. Let you pick what to install (searchable list + `All`).
+4. Install once to `.agents/skills/<id>` for universal providers; symlink (or `--copy`) for others.
+5. Track installs in `.agentry/lock.json` for remove/update.
+
+If a clone fails and a prior cache exists, Agentry asks whether to load from cache (`~/.cache/agentry/repos`).
+
+## Artifact layouts
+
+Author installable tools in a source repo like this:
+
+### Skills
+
+```text
 skills/
   enhance-prompt/
-    SKILL.md            # YAML frontmatter: name, description
+    SKILL.md
     references/
-      TEMPLATE.md       # optional supporting docs
-    ...
+      TEMPLATE.md
+  prompt/
+    rewrite/
+      SKILL.md
 ```
 
-`SKILL.md` frontmatter:
+### Agents / rules
 
-```yaml
----
-name: enhance-prompt
-description: Rewrite a user message into a precise, portable agent prompt.
----
-# enhance-prompt
-Instructions for the agent...
-```
-
-Categorized skills: `skills/<category>/<name>/SKILL.md`.
-
-### Agents — single `.mdc` file
-
-```
+```text
 agents/
   frontend-developer.mdc
-```
-
-`.mdc` frontmatter (same shape as skills):
-
-```yaml
----
-name: frontend-developer
-description: Senior frontend engineer agent.
----
-# frontend-developer
-Agent instructions...
-```
-
-Categorized agents: `agents/<category>/<name>.mdc`.
-
-### Rules — single `.mdc` file
-
-```
 rules/
   ask-dont-guess.mdc
 ```
 
-Same frontmatter and body shape as agents. Categorized rules: `rules/<category>/<name>.mdc`.
+### Scripts / profiles
 
-### Scripts — folder per use case
-
-```
+```text
 scripts/
-  lint/
-    run.js            # entrypoint (any language; a folder with files = one script)
-    README.md         # optional docs
-  format/
-    run.js
-```
-
-A script is a **folder** containing its files (entrypoint, helpers, docs). Categorized scripts: `scripts/<category>/<usecase>/`.
-
-### Profiles — single `.yaml` file (in a source repo)
-
-```
+  deploy/
+    README.md
 profiles/
   frontend.yaml
 ```
 
-A profile bundles artifact selectors + target agents + scope into one config. See the **Profiles** section below for the schema. Categorized profiles: `profiles/<category>/<name>.yaml`.
+Local install profiles (consumed by `agentry add profile`) live at `profile/<name>.yaml`.
 
-## How to install tools with agentry
+## Supported agents
 
-```bash
-# From a GitHub repo (author/repo shorthand)
-agentry add skills Prat011/awesome-llm-skills
+Agentry targets **70+** providers. Universal providers share `.agents/skills/`; others get a symlink or copy.
 
-# From a full GitHub URL
-agentry add skills https://github.com/Prat011/awesome-llm-skills
+| Agent | Skills path |
+| --- | --- |
+| Cursor | `.agents/skills` |
+| Codex | `.agents/skills` |
+| OpenCode | `.agents/skills` |
+| Gemini CLI | `.agents/skills` |
+| Claude Code | `.claude/skills` |
+| Windsurf | `.windsurf/skills` |
+| … | see `src/registry/agents.ts` |
 
-# From a subdirectory of a repo (GitHub tree URL)
-agentry add skills https://github.com/vercel-labs/agent-skills/tree/main/skills/web-design
-
-# From a GitLab URL
-agentry add skills https://gitlab.com/org/repo
-
-# From any git URL
-agentry add skills git@github.com:owner/repo.git
-
-# From a local path
-agentry add skills ./my-skills
-
-# Install to specific providers
-agentry add skills ./my-skills enhance-prompt --agent cursor --agent claude-code
-
-# Install to all providers
-agentry add skills ./my-skills enhance-prompt --agent '*'
-
-# Preview without installing
-agentry add skills ./my-skills --list
-```
-
-## Supported providers
-
-`agentry` installs into 70+ agent providers, mirroring vercel-labs/skills. Each provider has a project skills directory and a global one. A few common ones:
-
-| Provider       | `--agent`        | Project path        | Global path                   |
-| -------------- | ---------------- | ------------------- | ----------------------------- |
-| Cursor         | `cursor`         | `.agents/skills/`   | `~/.cursor/skills/`           |
-| Claude Code    | `claude-code`    | `.claude/skills/`   | `~/.claude/skills/`           |
-| Codex          | `codex`          | `.agents/skills/`   | `~/.codex/skills/`            |
-| OpenCode       | `opencode`       | `.agents/skills/`   | `~/.config/opencode/skills/`  |
-| Gemini CLI     | `gemini-cli`     | `.agents/skills/`   | `~/.gemini/skills/`           |
-| Windsurf       | `windsurf`       | `.windsurf/skills/` | `~/.codeium/windsurf/skills/` |
-| Cline          | `cline`          | `.agents/skills/`   | `~/.agents/skills/`           |
-| Amp            | `amp`            | `.agents/skills/`   | `~/.config/agents/skills/`    |
-| Goose          | `goose`          | `.goose/skills/`    | `~/.config/goose/skills/`     |
-| Roo Code       | `roo`            | `.roo/skills/`      | `~/.roo/skills/`              |
-| GitHub Copilot | `github-copilot` | `.agents/skills/`   | `~/.copilot/skills/`          |
-| Augment        | `augment`        | `.augment/skills/`  | `~/.augment/skills/`          |
-| Continue       | `continue`       | `.continue/skills/` | `~/.continue/skills/`         |
-| Zed            | `zed`            | `.agents/skills/`   | `~/.agents/skills/`           |
-| Warp           | `warp`           | `.agents/skills/`   | `~/.agents/skills/`           |
-
-...and 55+ more. The CLI auto-detects installed providers; pass `--agent` to target specific ones or `--agent '*'` for all.
-
-### Universal install (`.agents/skills`)
-
-Providers whose skills directory is `.agents/skills/` (Cursor, Codex, OpenCode, Gemini CLI, Cline, Amp, Zed, Warp, GitHub Copilot, …) are **universal**: a skill is installed **once** to `.agents/skills/<id>` and every universal provider reads it from there. Non-universal providers (Claude Code, Windsurf, Goose, Roo, Augment, Continue, …) get a **symlink** from their own skills directory to the canonical `.agents/skills/<id>` copy, so a single install reaches all of them with no duplication. Use `--copy` to make independent copies instead of symlinks.
-
-## Profiles
-
-A profile is a YAML file at `profile/<name>.yaml` in your project. It bundles artifact selectors, target agents, and scope; `agentry add profile <name> <source>` fetches the source once and installs everything the profile lists.
-
-```yaml
-name: frontend
-description: Frontend agents, rules, and skills
-scope: project # project | global
-targets:
-  agents: [cursor, claude-code] # target providers; '*' = all
-artifacts:
-  skills:
-    - id: prompt/enhance-prompt
-  agents:
-    - id: frontend-developer
-  rules:
-    - id: ask-dont-guess
-  scripts:
-    - id: lint
-```
-
-Each artifact ref may override the CLI source with its own `source:`. The command-line `<source>` is the default for refs without one.
-
-## Development / test
+## Development
 
 ```bash
-npm run typecheck        # tsc --noEmit
-npm test                 # vitest (discovery, source parser, agents registry, install/remove, profiles)
-npm run build            # obuild -> dist/cli.mjs
-npm run dev -- …         # run via tsx (no build needed)
-node dist/cli.mjs …      # run the built CLI
+npm install
+npm run typecheck
+npm test
+npm run build
+node dist/cli.mjs --help
 ```
 
-`src/` holds the logic: `cli.ts` (router), `commands.ts` (handlers), `core/` (types, source-parser, git, lock), `registry/agents.ts` (70+ providers), `artifacts/` (discovery, profiles), `ui/` (theme, prompts, detect). Runtime deps are minimal and UI libs are bundled by `obuild`.
+Requires **Node ≥ 22.20**.
 
 ## License
 
-MIT
+[MIT](LICENSE)

@@ -166,9 +166,8 @@ export function installOne(
   }
 
   if (artifact.kind === 'skill') {
-    // Universal + symlink system (mirrors vercel-labs/skills):
-    // Always COPY into canonical .agents/skills/<id> (source may be a temp clone).
-    // Non-universal agents symlink/copy from the stable canonical dir.
+    // Skills install once under .agents/skills, then non-universal agents link or copy.
+    // Always copy into canonical — the source tree may be a temp clone.
     const canonical = join(base, '.agents', 'skills', artifact.id);
     rmSync(canonical, { recursive: true, force: true });
     mkdirSync(join(canonical, '..'), { recursive: true });
@@ -344,7 +343,7 @@ export function removeSelection(
 
   writeLock(opts, lock);
 
-  // Extra sweep: common install roots may be left as empty shells.
+  // Drop empty install roots left behind after deletes.
   const sweepRoots = new Set<string>([
     join(base, '.agents', 'skills'),
     join(base, '.agents'),

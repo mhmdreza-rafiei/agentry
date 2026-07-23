@@ -1,4 +1,4 @@
-# Agent entrypoint — agentry
+# Agentry entrypoint
 
 `agentry` is a **raw installer**: a TypeScript ESM Node CLI that fetches **agents, skills, rules, and profiles** from any Git repo (or local path) and installs the selected ones into a project (or globally) under the target provider's directory (`.cursor/`, `.claude/skills/`, etc.). It mirrors the clean Clack-style UX of `vercel-labs/skills` and extends it beyond skills-only. The CLI ships no assets of its own — you point it at a source. Prefer progressive disclosure in assets: lean `SKILL.md` / `.mdc`, details in `references/`.
 
@@ -6,7 +6,8 @@
 
 - `agentry add <kind> <source> [selector]` — fetch a source (`author/repo`, git URL, GitHub tree URL, GitLab URL, or local path) and install matching artifacts. Omit the selector to list-and-pick. Use `--agent cursor --agent claude-code` to target specific providers (or `--agent '*'` for all). Kinds are singular (`skill | rule | agent | profile | script`); plurals are accepted and normalized.
 - `agentry add profile <name> [source]` — read `profile/<name>.yaml` (a bundled install config: artifacts + targets + scope) and install everything it lists from the source (or per-artifact `source` overrides).
-- `agentry remove <kind> [source] [selector]` / `agentry list [source] [kind]` / `agentry update [kind] [source] [selector]` / `agentry init <kind> [name] [category]` / `agentry uninstall`.
+- `agentry remove <kind> [source] [selector]` / `agentry list [source] [kind] [selector]` / `agentry update [kind] [source] [selector]` / `agentry init <kind> [name] [category]` / `agentry uninstall`.
+- `agentry list` (no source) lists installed artifacts; `agentry list skills` filters by kind; `agentry list author/repo …` discovers a source.
 - Selectors: `category/name`, `name` (uncategorized), or `category` (whole category). Remove/update accept a GitHub repo or local path to filter by recorded install source.
 
 Artifact layouts in a source repo:

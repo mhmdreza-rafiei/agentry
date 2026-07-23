@@ -6,5 +6,13 @@ skills-lock.json
 .cursor/skills/
 .claude/skills/
 .codex/skills/
+.agents/
+.agentry/
 dist/
 package-lock.json
+skills/
+agents/
+rules/
+profiles/
+scripts/
+profile/

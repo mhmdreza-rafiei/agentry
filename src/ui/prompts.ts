@@ -49,7 +49,7 @@ export function outro(message: string): void {
 
 export async function confirm(message: string): Promise<boolean> {
   if (isQuiet()) return true;
-  // Custom sky confirm — @clack/prompts defaults to green.
+  // Sky-themed confirm (Clack defaults to green).
   return new Promise((resolve) => {
     if (!process.stdin.isTTY) {
       resolve(true);

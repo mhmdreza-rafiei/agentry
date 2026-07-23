@@ -44,7 +44,7 @@ function saveToCache(parsed: ParsedSource, clonedRoot: string): void {
     mkdirSync(join(dest, '..'), { recursive: true });
     cpSync(clonedRoot, dest, { recursive: true });
   } catch {
-    // Cache is best-effort — never fail the install because of it.
+    // Cache write is best-effort.
   }
 }
 

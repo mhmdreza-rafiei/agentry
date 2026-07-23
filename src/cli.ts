@@ -4,7 +4,7 @@ import https from 'node:https';
 import { version, name as pkgName } from '../package.json' with { type: 'json' };
 import { ARTIFACT_KINDS, type ArtifactKind } from './core/types.js';
 import {
-  cmdAdd, cmdAddProfile, cmdRemove, cmdList, cmdListInstalled, cmdUpdateAssets, cmdInit, type CliOpts,
+  cmdAdd, cmdAddProfile, cmdRemove, cmdList, cmdUpdateAssets, cmdInit, type CliOpts,
 } from './commands.js';
 import { animateLogo, theme, printHelp } from './ui/theme.js';
 import * as ui from './ui/prompts.js';
