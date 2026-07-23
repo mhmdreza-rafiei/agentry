@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, symlinkSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, symlinkSync, readdirSync, statSync, lstatSync, copyFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import type { LockFile, LockEntry, InstallOpts, Artifact, AgentConfig } from './types.js';
@@ -6,6 +6,46 @@ import { getAgent } from '../registry/agents.js';
 import { sourcesEqual } from './source_parser.js';
 
 const home = homedir();
+
+/**
+ * Copy a file/dir tree into dest, materializing symlink targets as real files/dirs.
+ * Node's cpSync({ dereference: true }) still preserves nested symlinks on some platforms;
+ * that would let a malicious source plant live links into the install tree.
+ */
+export function copyTreeDereferenced(src: string, dest: string, seen = new Set<string>()): void {
+  const st = lstatSync(src);
+  if (st.isSymbolicLink()) {
+    let real: string;
+    try {
+      real = realpathSync(src);
+    } catch {
+      return; // broken link — do not plant a dangling symlink
+    }
+    if (seen.has(real)) return;
+    seen.add(real);
+    copyTreeDereferenced(real, dest, seen);
+    return;
+  }
+  if (st.isDirectory()) {
+    let real: string;
+    try {
+      real = realpathSync(src);
+    } catch {
+      real = resolve(src);
+    }
+    if (seen.has(real)) return;
+    seen.add(real);
+    mkdirSync(dest, { recursive: true });
+    for (const name of readdirSync(src)) {
+      copyTreeDereferenced(join(src, name), join(dest, name), seen);
+    }
+    return;
+  }
+  if (st.isFile()) {
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(src, dest);
+  }
+}
 
 export function lockBase(opts: Pick<InstallOpts, 'scope' | 'dir'>): string {
   return opts.scope === 'global' ? home : (opts.dir || process.cwd());
@@ -167,12 +207,11 @@ export function installOne(
 
   if (artifact.kind === 'skill') {
     // Skills install once under .agents/skills, then non-universal agents link or copy.
-    // Always copy into canonical — the source tree may be a temp clone.
+    // Always materialize into canonical — source may be a temp clone with planted symlinks.
     const canonical = join(base, '.agents', 'skills', artifact.id);
     rmSync(canonical, { recursive: true, force: true });
     mkdirSync(join(canonical, '..'), { recursive: true });
-    // dereference: untrusted source trees may plant symlinks that escape the clone.
-    cpSync(artifact.dir, canonical, { recursive: true, dereference: true });
+    copyTreeDereferenced(artifact.dir, canonical);
     for (const a of list) {
       if (a.skillsDir === '.agents/skills') {
         dests.push({ agent: a.name, dir: canonical });
@@ -181,11 +220,11 @@ export function installOne(
         rmSync(dir, { recursive: true, force: true });
         mkdirSync(join(dir, '..'), { recursive: true });
         if (opts.copy) {
-          cpSync(canonical, dir, { recursive: true, dereference: true });
+          copyTreeDereferenced(canonical, dir);
           dests.push({ agent: a.name, dir });
         } else {
           try { symlinkSync(canonical, dir, 'junction' as any); dests.push({ agent: a.name, dir, symlinked: true }); }
-          catch { cpSync(canonical, dir, { recursive: true, dereference: true }); dests.push({ agent: a.name, dir }); }
+          catch { copyTreeDereferenced(canonical, dir); dests.push({ agent: a.name, dir }); }
         }
       }
     }
@@ -195,7 +234,7 @@ export function installOne(
       const dir = agentDir(artifact, a, base);
       rmSync(dir, { recursive: true, force: true });
       mkdirSync(join(dir, '..'), { recursive: true });
-      cpSync(artifact.dir, dir, { recursive: true, dereference: true });
+      copyTreeDereferenced(artifact.dir, dir);
       dests.push({ agent: a.name, dir });
     }
   }
