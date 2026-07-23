@@ -9,7 +9,6 @@ skills-lock.json
 .agents/
 .agentry/
 dist/
-package-lock.json
 skills/
 agents/
 rules/
