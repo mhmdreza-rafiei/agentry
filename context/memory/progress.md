@@ -14,6 +14,7 @@ Public-facing CLI on `main`. History rewritten to remove Cursor Agent authorship
 
 ## Follow-ups
 
-- Force-push rewritten history; wait for GitHub Contributors cache to refresh (can take hours/days; discussion notes it may still list Cursor briefly).
+- Wait for GitHub Contributors cache to drop Cursor (can take hours/days after rewrite; see discussion #186158).
 - Confirm `mhmdreza-rafiei/agent-tools` is public for README examples.
 - Publish npm when ready (`npm version` + `npm publish --access public`).
+- Tip: turn off Cursor Settings → Agents → Attribution; local `.git/hooks/prepare-commit-msg` strips reinjected trailers.
