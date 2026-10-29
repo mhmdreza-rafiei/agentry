@@ -175,18 +175,35 @@ async function main(): Promise<void> {
     return;
   }
   if (action === 'add') {
-    const kind = positional[1] ? normalizeKind(positional[1]) : undefined;
-    if (!kind) throw new Error('Missing kind. e.g. agentry add skills author/repo');
-    if (kind === 'profile') { await cmdAddProfile(positional[2]!, positional[3], opts); return; }
-    if (kind !== 'all' && !isKind(kind)) throw new Error(`Unknown kind: ${kind}`);
-    await cmdAdd(kind as ArtifactKind | 'all', positional[2]!, positional[3], opts);
+    const a1 = positional[1];
+    if (!a1) throw new Error('Missing source or kind. e.g. agentry add author/repo or agentry add skills author/repo');
+    const k1 = normalizeKind(a1);
+    if (k1 === 'profile') {
+      await cmdAddProfile(positional[2]!, positional[3], opts);
+      return;
+    }
+    if (k1 === 'all' || isKind(k1)) {
+      const source = positional[2];
+      if (!source) throw new Error(`Missing source. e.g. agentry add ${k1} author/repo`);
+      await cmdAdd(k1 as ArtifactKind | 'all', source, positional[3], opts);
+      return;
+    }
+    // Optional kind: agentry add <source> [selector]
+    const source = a1;
+    const selector = positional[2];
+    await cmdAdd('all', source, selector, opts);
     return;
   }
   if (action === 'remove' || action === 'rm') {
-    const kind = positional[1] ? normalizeKind(positional[1]) : undefined;
-    if (!kind) throw new Error('Missing kind. e.g. agentry remove skills enhance-prompt');
-    if (kind !== 'all' && !isKind(kind)) throw new Error(`Unknown kind: ${kind}`);
-    await cmdRemove(kind as ArtifactKind | 'all', positional[2], positional[3], opts);
+    const a1 = positional[1];
+    if (!a1) throw new Error('Missing kind or selector. e.g. agentry remove skills enhance-prompt');
+    const k1 = normalizeKind(a1);
+    if (k1 === 'all' || isKind(k1)) {
+      await cmdRemove(k1 as ArtifactKind | 'all', positional[2], positional[3], opts);
+      return;
+    }
+    // Optional kind: agentry remove [source] <selector>
+    await cmdRemove('all', positional[1], positional[2], opts);
     return;
   }
   if (action === 'init') {

@@ -1,9 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync, readdirSync, statSync, lstatSync, copyFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep, relative } from 'node:path';
 import type { LockFile, LockEntry, InstallOpts, Artifact, AgentConfig } from './types.js';
 import { getAgent } from '../registry/agents.js';
 import { sourcesEqual } from './source_parser.js';
+import { createIgnoreMatcher, DEFAULT_IGNORES } from '../artifacts/ignore.js';
 
 const home = homedir();
 
@@ -11,8 +12,15 @@ const home = homedir();
  * Copy a file/dir tree into dest, materializing symlink targets as real files/dirs.
  * Node's cpSync({ dereference: true }) still preserves nested symlinks on some platforms;
  * that would let a malicious source plant live links into the install tree.
+ * Skips VCS/build files (.git, .github, etc.) and patterns matching ignore rules.
  */
-export function copyTreeDereferenced(src: string, dest: string, seen = new Set<string>()): void {
+export function copyTreeDereferenced(
+  src: string,
+  dest: string,
+  seen = new Set<string>(),
+  filter?: (rel: string, isDir: boolean) => boolean,
+  baseSrc: string = src,
+): void {
   const st = lstatSync(src);
   if (st.isSymbolicLink()) {
     let real: string;
@@ -23,7 +31,7 @@ export function copyTreeDereferenced(src: string, dest: string, seen = new Set<s
     }
     if (seen.has(real)) return;
     seen.add(real);
-    copyTreeDereferenced(real, dest, seen);
+    copyTreeDereferenced(real, dest, seen, filter, baseSrc);
     return;
   }
   if (st.isDirectory()) {
@@ -37,7 +45,18 @@ export function copyTreeDereferenced(src: string, dest: string, seen = new Set<s
     seen.add(real);
     mkdirSync(dest, { recursive: true });
     for (const name of readdirSync(src)) {
-      copyTreeDereferenced(join(src, name), join(dest, name), seen);
+      const childSrc = join(src, name);
+      const relPath = relative(baseSrc, childSrc).replace(/\\/g, '/');
+      let isDir = false;
+      try { isDir = statSync(childSrc).isDirectory(); } catch {}
+
+      if (DEFAULT_IGNORES.includes(name) || name === '.agentryignore' || name === '.agentry.ignore') {
+        continue;
+      }
+      if (filter && filter(relPath, isDir)) {
+        continue;
+      }
+      copyTreeDereferenced(childSrc, join(dest, name), seen, filter, baseSrc);
     }
     return;
   }
@@ -189,6 +208,7 @@ export function installRootsFor(artifact: Artifact, agentList: AgentConfig[], op
 function pluralKind(kind: string): string {
   return kind === 'skill' ? 'skills' : kind === 'rule' ? 'rules' : kind === 'agent' ? 'agents' : kind === 'script' ? 'scripts' : 'profiles';
 }
+
 export function installOne(
   artifact: Artifact,
   opts: InstallOpts,
@@ -205,13 +225,15 @@ export function installOne(
     return dests;
   }
 
+  const ignoreFilter = artifact.isFile ? undefined : createIgnoreMatcher(artifact.dir);
+
   if (artifact.kind === 'skill') {
     // Skills install once under .agents/skills, then non-universal agents link or copy.
     // Always materialize into canonical — source may be a temp clone with planted symlinks.
     const canonical = join(base, '.agents', 'skills', artifact.id);
     rmSync(canonical, { recursive: true, force: true });
     mkdirSync(join(canonical, '..'), { recursive: true });
-    copyTreeDereferenced(artifact.dir, canonical);
+    copyTreeDereferenced(artifact.dir, canonical, new Set(), ignoreFilter);
     for (const a of list) {
       if (a.skillsDir === '.agents/skills') {
         dests.push({ agent: a.name, dir: canonical });
@@ -234,7 +256,7 @@ export function installOne(
       const dir = agentDir(artifact, a, base);
       rmSync(dir, { recursive: true, force: true });
       mkdirSync(join(dir, '..'), { recursive: true });
-      copyTreeDereferenced(artifact.dir, dir);
+      copyTreeDereferenced(artifact.dir, dir, new Set(), ignoreFilter);
       dests.push({ agent: a.name, dir });
     }
   }

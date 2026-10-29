@@ -2,13 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync, symlinkSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { listKind, listAll, select } from '../src/artifacts/discovery.js';
+import { listKind, listAll, select, selectAll } from '../src/artifacts/discovery.js';
 import { parseSource, sourcesEqual, sourceIdentity, isExplicitSource, redactUrl } from '../src/core/source_parser.js';
 import { resolveSource, assertInsideRoot } from '../src/core/git.js';
 import { installOne, removeSelection, listInstalled, readLock, writeLock } from '../src/core/lock.js';
 import { getAgent, listAgents, resolveAgents } from '../src/registry/agents.js';
 import { ProfileSchema } from '../src/artifacts/profiles.js';
 import { scaffoldSkill, scaffoldMdc, scaffoldProfile, scaffoldScript } from '../src/artifacts/scaffold.js';
+import { createIgnoreMatcher, parseIgnoreFile, isDefaultIgnored } from '../src/artifacts/ignore.js';
 import type { Artifact, InstallOpts, AgentConfig } from '../src/core/types.js';
 
 // Build a throwaway "source repo" with the agentry asset layouts:
@@ -367,6 +368,171 @@ describe('security hardening', () => {
     expect(existsSync(installed)).toBe(true);
     expect(lstatSync(installed).isSymbolicLink()).toBe(false);
     expect(readFileSync(installed, 'utf8')).toBe('SECRET');
+
+    rmSync(root, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  });
+});
+
+describe('root discovery (all kinds)', () => {
+  it('discovers single skill with root SKILL.md and parses frontmatter name', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentry-root-skill-'));
+    writeFileSync(
+      join(root, 'SKILL.md'),
+      '---\nname: standalone-root-skill\ndescription: Single skill in repo root\n---\n# Root Skill\n',
+    );
+    const skills = listKind(root, 'skill');
+    expect(skills).toHaveLength(1);
+    expect(skills[0]!.id).toBe('standalone-root-skill');
+    expect(skills[0]!.name).toBe('standalone-root-skill');
+    expect(skills[0]!.description).toBe('Single skill in repo root');
+    expect(skills[0]!.dir).toBe(root);
+    expect(skills[0]!.isFile).toBe(false);
+
+    // selectAll should find it across all kinds without specifying 'skill'
+    const selected = selectAll(root, 'standalone-root-skill');
+    expect(selected).toHaveLength(1);
+    expect(selected[0]!.id).toBe('standalone-root-skill');
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('discovers root AGENT.md, root RULE.md, .cursorrules, and root profiles', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentry-root-artifacts-'));
+    writeFileSync(join(root, 'AGENT.md'), '---\nname: primary-agent\ndescription: Core agent\n---\n# Agent\n');
+    writeFileSync(join(root, 'RULE.md'), '---\nname: primary-rule\ndescription: Core rule\n---\n# Rule\n');
+    writeFileSync(join(root, '.cursorrules'), '# cursorrules content\n');
+    mkdirSync(join(root, 'profile'), { recursive: true });
+    writeFileSync(join(root, 'profile', 'local-setup.yaml'), 'name: local-setup\nscope: project\n');
+    writeFileSync(join(root, 'root-deploy.profile.yaml'), 'name: root-deploy\nscope: project\n');
+    writeFileSync(join(root, 'run.sh'), '#!/bin/bash\necho "hello"\n');
+
+    const agents = listKind(root, 'agent');
+    expect(agents.map((a) => a.id)).toContain('primary-agent');
+
+    const rules = listKind(root, 'rule');
+    expect(rules.map((r) => r.id)).toContain('primary-rule');
+    expect(rules.map((r) => r.id)).toContain('cursorrules');
+
+    const profiles = listKind(root, 'profile');
+    expect(profiles.map((p) => p.id)).toContain('local-setup');
+    expect(profiles.map((p) => p.id)).toContain('root-deploy');
+
+    const scripts = listKind(root, 'script');
+    expect(scripts.length).toBeGreaterThanOrEqual(1);
+
+    const all = listAll(root);
+    expect(all.length).toBeGreaterThanOrEqual(5);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe('.agentryignore / ignore rules', () => {
+  it('parses ignore file lines, comments, and directory rules', () => {
+    const text = `
+# Developer internal skills
+dev-skills/
+skills/internal-*
+*.draft.mdc
+/root-only/
+`;
+    const rules = parseIgnoreFile(text);
+    expect(rules).toHaveLength(4);
+    expect(rules[0]!.isDirOnly).toBe(true);
+
+    const root = mkdtempSync(join(tmpdir(), 'agentry-ignore-'));
+    writeFileSync(join(root, '.agentryignore'), text);
+    const matcher = createIgnoreMatcher(root);
+
+    expect(matcher('dev-skills', true)).toBe(true);
+    expect(matcher('dev-skills/my-skill/SKILL.md', false)).toBe(true);
+    expect(matcher('skills/internal-helper', true)).toBe(true);
+    expect(matcher('agents/test.draft.mdc', false)).toBe(true);
+    expect(matcher('skills/public-tool', true)).toBe(false);
+    expect(matcher('agents/prod.mdc', false)).toBe(false);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('filters out ignored artifacts during discovery', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentry-ignore-disco-'));
+    writeFileSync(
+      join(root, '.agentryignore'),
+      'dev-skills/\nskills/secret-*\n*.draft.mdc\n',
+    );
+
+    // Allowed skill
+    mkdirSync(join(root, 'skills', 'public-skill'), { recursive: true });
+    writeFileSync(join(root, 'skills', 'public-skill', 'SKILL.md'), '---\nname: public-skill\n---\n');
+
+    // Ignored skill in dev-skills/
+    mkdirSync(join(root, 'dev-skills', 'debug-skill'), { recursive: true });
+    writeFileSync(join(root, 'dev-skills', 'debug-skill', 'SKILL.md'), '---\nname: debug-skill\n---\n');
+
+    // Ignored skill by pattern
+    mkdirSync(join(root, 'skills', 'secret-vault'), { recursive: true });
+    writeFileSync(join(root, 'skills', 'secret-vault', 'SKILL.md'), '---\nname: secret-vault\n---\n');
+
+    // Allowed agent
+    mkdirSync(join(root, 'agents'), { recursive: true });
+    writeFileSync(join(root, 'agents', 'worker.mdc'), '---\nname: worker\n---\n');
+
+    // Ignored agent
+    writeFileSync(join(root, 'agents', 'wip.draft.mdc'), '---\nname: wip\n---\n');
+
+    const skills = listKind(root, 'skill');
+    expect(skills.map((s) => s.id)).toEqual(['public-skill']);
+
+    const agents = listKind(root, 'agent');
+    expect(agents.map((a) => a.id)).toEqual(['worker']);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('respects default ignores (.git, node_modules, etc.)', () => {
+    expect(isDefaultIgnored('.git')).toBe(true);
+    expect(isDefaultIgnored('.git/config')).toBe(true);
+    expect(isDefaultIgnored('node_modules/pkg/index.js')).toBe(true);
+    expect(isDefaultIgnored('.agentry/lock.json')).toBe(true);
+    expect(isDefaultIgnored('skills/my-skill/SKILL.md')).toBe(false);
+  });
+});
+
+describe('safe install from root skill', () => {
+  it('installs root skill into target without copying .git or ignored files', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentry-root-install-'));
+    writeFileSync(
+      join(root, 'SKILL.md'),
+      '---\nname: clean-root-skill\ndescription: clean\n---\n# Clean\n',
+    );
+    writeFileSync(join(root, 'helper.js'), 'console.log("ok");');
+    writeFileSync(join(root, '.agentryignore'), 'internal-scratch/\n');
+
+    // Add fake .git directory
+    mkdirSync(join(root, '.git'), { recursive: true });
+    writeFileSync(join(root, '.git', 'HEAD'), 'ref: refs/heads/main');
+
+    // Add internal directory that is ignored
+    mkdirSync(join(root, 'internal-scratch'), { recursive: true });
+    writeFileSync(join(root, 'internal-scratch', 'notes.txt'), 'do not copy');
+
+    const target = mkdtempSync(join(tmpdir(), 'agentry-root-tgt-'));
+    const opts: InstallOpts = { scope: 'project', dir: target, agents: [], copy: true, dryRun: false };
+    const agentList: AgentConfig[] = [getAgent('cursor')!];
+
+    const skill = listKind(root, 'skill')[0]!;
+    expect(skill.id).toBe('clean-root-skill');
+    installOne(skill, opts, agentList, root);
+
+    const installedRoot = join(target, '.agents', 'skills', 'clean-root-skill');
+    expect(existsSync(join(installedRoot, 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(installedRoot, 'helper.js'))).toBe(true);
+
+    // .git, .agentryignore, and ignored internal-scratch must NOT exist in the installed copy
+    expect(existsSync(join(installedRoot, '.git'))).toBe(false);
+    expect(existsSync(join(installedRoot, '.agentryignore'))).toBe(false);
+    expect(existsSync(join(installedRoot, 'internal-scratch'))).toBe(false);
 
     rmSync(root, { recursive: true, force: true });
     rmSync(target, { recursive: true, force: true });

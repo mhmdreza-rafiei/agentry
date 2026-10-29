@@ -24,11 +24,15 @@ npx @mhmdreza-rafiei/agentry@latest --help
 ## Quick start
 
 ```bash
-# Browse + install skills from a repo
+# Install a standalone single-skill repository (root SKILL.md)
+agentry add author/my-skill
+
+# Browse + install from a catalog repo (kind is optional or explicit)
+agentry add mhmdreza-rafiei/agent-tools
 agentry add skills mhmdreza-rafiei/agent-tools
 
 # Install one skill to Cursor
-agentry add skills mhmdreza-rafiei/agent-tools enhance-prompt -a cursor
+agentry add mhmdreza-rafiei/agent-tools enhance-prompt -a cursor
 
 # See what is installed
 agentry list
@@ -90,36 +94,37 @@ agentry list skills
 
 | Command | Description |
 | --- | --- |
-| `agentry add <kind> <source> [selector]` | Discover and install artifacts |
+| `agentry add [kind] <source> [selector]` | Discover and install artifacts (kind is optional) |
 | `agentry add profile <name> [source]` | Apply a local `profile/<name>.yaml` bundle |
 | `agentry list` | List installed artifacts |
 | `agentry list <kind>` | List installed artifacts of one kind |
 | `agentry list <source> [kind] [selector]` | List what a repo/path contains |
-| `agentry remove <kind> [source] [selector]` | Remove installs (files + lock) |
+| `agentry remove [kind] [source] [selector]` | Remove installs (files + lock) |
 | `agentry update [kind] [source] [selector]` | Re-install from source or lockfile |
 | `agentry init <kind> [name] [category]` | Scaffold a new artifact |
 | `agentry update` | Update the Agentry CLI itself |
 | `agentry uninstall` | Uninstall the Agentry CLI |
 
-`<kind>` is `skill | rule | agent | profile | script` (plurals accepted).
+`<kind>` is `skill | rule | agent | profile | script` (plurals accepted; omit to match all).
 
 ### Source formats
 
 ```bash
-# GitHub shorthand
+# GitHub shorthand (single-skill repo or catalog)
+agentry add mhmdreza-rafiei/agent-tools
 agentry add skills mhmdreza-rafiei/agent-tools
 
 # Full GitHub URL
-agentry add skills https://github.com/mhmdreza-rafiei/agent-tools
+agentry add https://github.com/mhmdreza-rafiei/agent-tools
 
 # Tree URL (subdir + ref)
-agentry add skills https://github.com/mhmdreza-rafiei/agent-tools/tree/main/skills
+agentry add https://github.com/mhmdreza-rafiei/agent-tools/tree/main/skills
 
 # Local path
-agentry add skills ./my-skills
+agentry add ./my-skills
 
 # Any git URL
-agentry add skills git@github.com:mhmdreza-rafiei/agent-tools.git
+agentry add git@github.com:mhmdreza-rafiei/agent-tools.git
 ```
 
 ### Options
@@ -145,10 +150,10 @@ agentry add skills git@github.com:mhmdreza-rafiei/agent-tools.git
 # List everything in a catalog repo
 agentry list mhmdreza-rafiei/agent-tools
 agentry list mhmdreza-rafiei/agent-tools skills
-agentry list mhmdreza-rafiei/agent-tools skills enhance-prompt
+agentry list mhmdreza-rafiei/agent-tools enhance-prompt
 
 # Install
-agentry add skills mhmdreza-rafiei/agent-tools
+agentry add mhmdreza-rafiei/agent-tools
 agentry add skills mhmdreza-rafiei/agent-tools enhance-prompt -a cursor -a claude-code
 agentry add rules mhmdreza-rafiei/agent-tools ask-dont-guess
 agentry add agents mhmdreza-rafiei/agent-tools frontend-developer
@@ -159,7 +164,7 @@ agentry list skills
 
 # Update / remove by selector or by install source
 agentry update skills mhmdreza-rafiei/agent-tools
-agentry remove skills enhance-prompt
+agentry remove enhance-prompt
 agentry remove skills mhmdreza-rafiei/agent-tools
 
 # Scaffold
@@ -173,18 +178,33 @@ Example catalog used throughout this README: [`mhmdreza-rafiei/agent-tools`](htt
 ## How it works
 
 1. Resolve a source (local path or shallow git clone).
-2. Discover artifacts under `<kind>s/` **and** root markers (`SKILL.md`, `.mdc`).
-3. Let you pick what to install (searchable list + `All`).
-4. Install once to `.agents/skills/<id>` for universal providers; symlink (or `--copy`) for others.
-5. Track installs in `.agentry/lock.json` for remove/update.
+2. Discover artifacts under `<kind>s/` **and** root markers:
+   - Root `SKILL.md` (standalone single-skill repo)
+   - Root `AGENT.md` / `RULE.md` / `.cursorrules` / `.mdc` files
+   - Root `profile/<name>.yaml` / `*.profile.yaml` / `profile.yaml`
+   - Root scripts (`run.sh`, `script.sh`, `run.js`)
+3. Filter out directories/files ignored by `.agentryignore` or `.agentry.ignore` (and built-in VCS ignores like `.git`).
+4. Let you pick what to install (searchable list + `All`).
+5. Install once to `.agents/skills/<id>` for universal providers; symlink (or `--copy`) for others.
+6. Track installs in `.agentry/lock.json` for remove/update.
 
 If a clone fails and a prior cache exists, Agentry asks whether to load from cache (`~/.cache/agentry/repos`).
 
 ## Artifact layouts
 
-Author installable tools in a source repo like this:
+Author installable tools in a source repo:
 
-### Skills
+### Single-skill repo (Root layout)
+
+```text
+SKILL.md
+references/
+  GUIDE.md
+scripts/
+  tool.sh
+```
+
+### Multi-skill catalog
 
 ```text
 skills/
@@ -216,7 +236,18 @@ profiles/
   frontend.yaml
 ```
 
-Local install profiles (consumed by `agentry add profile`) live at `profile/<name>.yaml`.
+Local install profiles live at `profile/<name>.yaml`.
+
+### Excluding development assets (`.agentryignore`)
+
+Place `.agentryignore` (or `.agentry.ignore`) in the root of your repo to prevent internal tools from being discovered or installed:
+
+```gitignore
+# Exclude internal dev skills
+dev-skills/
+skills/internal-*
+*.draft.mdc
+```
 
 ## Supported agents
 

@@ -15,7 +15,9 @@ Agentry roadmap — skills-parity CLI extended for agents/skills/rules/profiles/
 3. Source-aware remove/update; git clone cache; empty-folder prune.
 4. Sky UI + searchable multiselect; action-aware agent prompts.
 5. Expanded `list` (installed + source + kind + selector).
-6. Public README refresh; docs logo removed from tree (user choice).
+6. Root discovery across all kinds (standalone single-skill repos with root `SKILL.md`, `AGENT.md`, `RULE.md`, `.cursorrules`, `profile.yaml`, root scripts).
+7. `.agentryignore` / `.agentry.ignore` support + safe install excluding `.git` and internal development files.
+8. Optional kind CLI syntax (`agentry add <source> [selector]`).
 
 ## Next
 

@@ -1,6 +1,6 @@
 import { ARTIFACT_KINDS, type ArtifactKind, type InstallOpts, type AgentConfig, type Artifact } from './core/types.js';
 import { resolveSource } from './core/git.js';
-import { listKind, listAll, select } from './artifacts/discovery.js';
+import { listKind, listAll, select, selectAll } from './artifacts/discovery.js';
 import { installOne, removeSelection, listInstalled, readLock } from './core/lock.js';
 import {
   getAgent, listAgents, detectInstalledAgents, resolveAgents,
@@ -63,28 +63,35 @@ export async function cmdAdd(kind: ArtifactKind | 'all', source: string, selecto
   await delayQuiet(280);
   const { root, cleanup } = await resolveSourceWithUi(source, opts);
   try {
-    const artifacts = await ui.spinner('Discovering\u2026', () => (kind === 'all' ? listAll(root) : select(root, kind, selector)), (a) => {
-      const noun = kind === 'all' ? 'artifact' : kind;
-      return `Found ${a.length} ${noun}${a.length === 1 ? '' : 's'}`;
-    }, 620);
+    const artifacts = await ui.spinner(
+      'Discovering\u2026',
+      () => (kind === 'all' ? (selector ? selectAll(root, selector) : listAll(root)) : select(root, kind, selector)),
+      (a) => {
+        const noun = kind === 'all' ? 'artifact' : kind;
+        return `Found ${a.length} ${noun}${a.length === 1 ? '' : 's'}`;
+      },
+      620,
+    );
     if (!artifacts.length) { ui.outro(c.red(`Nothing found for "${kind}${selector ? ' ' + selector : ''}" in ${source}.`)); return; }
     await delayQuiet(320);
     ui.blank();
     if (opts.dryRun) { const agents = await resolveAgentList(opts, 'install'); ui.preview(artifacts, agents); return; }
 
     let chosen = artifacts;
-    if (!selector && kind !== 'all' && artifacts.length > 1 && !opts.all && !opts.yes && !ui.isQuiet()) {
-      await ui.sectionTransition('source discovery', `select ${kind}s to install`);
-      const picked = await ui.selectArtifacts(`Select ${kind}s to install`, artifacts);
+    if (!selector && artifacts.length > 1 && !opts.all && !opts.yes && !ui.isQuiet()) {
+      const noun = kind === 'all' ? 'artifacts' : `${kind}s`;
+      await ui.sectionTransition('source discovery', `select ${noun} to install`);
+      const picked = await ui.selectArtifacts(`Select ${noun} to install`, artifacts);
       if (ui.isCancelLike(picked)) { ui.outro('Cancelled.'); return; }
       chosen = picked as Artifact[];
       await ui.sectionTransition(
-        `${chosen.length} ${kind}${chosen.length === 1 ? '' : 's'} selected`,
+        `${chosen.length} ${chosen.length === 1 ? 'artifact' : 'artifacts'} selected`,
         'choose target agents',
       );
     } else if (!ui.isQuiet() && !opts.agents.length && !opts.all && !opts.yes) {
+      const noun = kind === 'all' ? (chosen.length === 1 ? 'artifact' : 'artifacts') : `${kind}${chosen.length === 1 ? '' : 's'}`;
       await ui.sectionTransition(
-        `${chosen.length} ${kind}${chosen.length === 1 ? '' : 's'} ready`,
+        `${chosen.length} ${noun} ready`,
         'choose target agents',
       );
     } else {
@@ -254,7 +261,7 @@ export async function cmdRemove(
     let count = 0;
     let paths = 0;
     for (const t of ARTIFACT_KINDS) {
-      const r = removeSelection(t, undefined, installOpts, agentList, source);
+      const r = removeSelection(t, selector, installOpts, agentList, source);
       count += r.removedKeys.length;
       paths += r.removedPaths.length;
     }
@@ -294,7 +301,7 @@ export async function cmdList(
       'Discovering\u2026',
       () => {
         if (kind) return select(root, kind, selector);
-        return listAll(root);
+        return selector ? selectAll(root, selector) : listAll(root);
       },
       (a) => `Found ${a.length} artifact${a.length === 1 ? '' : 's'}`,
       520,
@@ -426,25 +433,27 @@ export async function cmdUpdateAssets(
     try {
       const artifacts = await ui.spinner(
         'Discovering\u2026',
-        () => (kind === 'all' ? listAll(root) : select(root, kind, selector)),
+        () => (kind === 'all' ? (selector ? selectAll(root, selector) : listAll(root)) : select(root, kind, selector)),
         (a) => `Found ${a.length} to update`,
         620,
       );
       if (!artifacts.length) { ui.warn(`Nothing found in ${source}.`); return; }
 
       let chosen = artifacts;
-      if (!selector && kind !== 'all' && artifacts.length > 1 && !opts.all && !opts.yes && !ui.isQuiet()) {
-        await ui.sectionTransition('source discovery', `select ${kind}s to update`);
-        const picked = await ui.selectArtifacts(`Select ${kind}s to update`, artifacts);
+      if (!selector && artifacts.length > 1 && !opts.all && !opts.yes && !ui.isQuiet()) {
+        const noun = kind === 'all' ? 'artifacts' : `${kind}s`;
+        await ui.sectionTransition('source discovery', `select ${noun} to update`);
+        const picked = await ui.selectArtifacts(`Select ${noun} to update`, artifacts);
         if (ui.isCancelLike(picked)) { ui.outro('Cancelled.'); return; }
         chosen = picked as Artifact[];
         await ui.sectionTransition(
-          `${chosen.length} ${kind}${chosen.length === 1 ? '' : 's'} selected`,
+          `${chosen.length} ${chosen.length === 1 ? 'artifact' : 'artifacts'} selected`,
           'choose target agents',
         );
       } else if (!ui.isQuiet() && !opts.agents.length && !opts.all && !opts.yes) {
+        const noun = kind === 'all' ? (chosen.length === 1 ? 'artifact' : 'artifacts') : `${kind}${chosen.length === 1 ? '' : 's'}`;
         await ui.sectionTransition(
-          `${chosen.length} ${kind}${chosen.length === 1 ? '' : 's'} ready`,
+          `${chosen.length} ${noun} ready`,
           'choose target agents',
         );
       }
