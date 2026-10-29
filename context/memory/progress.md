@@ -22,8 +22,13 @@ Public-facing CLI on `main`. History rewritten to remove Cursor Agent authorship
   - `agentry add <source> [selector]` discovers and installs without requiring `skill` or `all`.
   - `agentry remove [source] <selector>` works with optional kind.
   - `selectAll(root, selector)` filters across all kinds.
+- **Web / Skill Hub Installation (`add from <url>`)**:
+  - `agentry add from <url> [selector]` / `agentry from <url>` / `agentry add <url>`.
+  - Resolves arbitrary websites and hubs (e.g. `awesomeskill.ai/skill/...`): auto-detects embedded GitHub tree URLs, canonical repo links, GitHub Gists, or direct raw markdown / embedded HTML `<pre><code>` code blocks.
+  - Zero external dependencies: powered by Node standard `http`/`https`.
+  - Recorded in `.agentry/lock.json` as `web:<url>`.
 - **Unit Tests**:
-  - 27 hermetic vitest tests in `tests/core.ts` (all passing).
+  - 31 hermetic vitest tests in `tests/core.ts` (all passing).
 
 ## Verify
 

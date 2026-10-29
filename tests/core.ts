@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync, symlinkSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,6 +10,7 @@ import { getAgent, listAgents, resolveAgents } from '../src/registry/agents.js';
 import { ProfileSchema } from '../src/artifacts/profiles.js';
 import { scaffoldSkill, scaffoldMdc, scaffoldProfile, scaffoldScript } from '../src/artifacts/scaffold.js';
 import { createIgnoreMatcher, parseIgnoreFile, isDefaultIgnored } from '../src/artifacts/ignore.js';
+import * as web from '../src/core/web.js';
 import type { Artifact, InstallOpts, AgentConfig } from '../src/core/types.js';
 
 // Build a throwaway "source repo" with the agentry asset layouts:
@@ -73,6 +74,13 @@ describe('source parser', () => {
     expect(parseSource('https://gitlab.com/org/repo').kind).toBe('gitlab-url');
     expect(parseSource('git@github.com:owner/repo.git').kind).toBe('git-url');
     expect(parseSource('https://example.com/x.git').kind).toBe('git-url');
+  });
+
+  it('handles web-url formats (skill directories and marketplaces)', () => {
+    const parsed = parseSource('https://awesomeskill.ai/skill/my-skills-prompt-enhancer');
+    expect(parsed.kind).toBe('web-url');
+    expect(parsed.url).toBe('https://awesomeskill.ai/skill/my-skills-prompt-enhancer');
+    expect(sourceIdentity('https://awesomeskill.ai/skill/my-skills-prompt-enhancer')).toContain('web:');
   });
 
   it('resolves local paths', async () => {
@@ -536,5 +544,79 @@ describe('safe install from root skill', () => {
 
     rmSync(root, { recursive: true, force: true });
     rmSync(target, { recursive: true, force: true });
+  });
+});
+
+describe('web source resolver', () => {
+  it('resolves raw markdown from an HTTP endpoint and detects root skill', async () => {
+    const mockFetcher = vi.fn().mockResolvedValue({
+      body: '---\nname: my-custom-prompt\ndescription: Web skill\n---\n# My Custom Prompt\n',
+      status: 200,
+      contentType: 'text/markdown',
+      finalUrl: 'https://example.com/skill/my-custom-prompt',
+    });
+
+    const res1 = await web.resolveWebSource('https://example.com/skill/my-custom-prompt', {}, mockFetcher);
+    const skills1 = listKind(res1.root, 'skill');
+    expect(skills1).toHaveLength(1);
+    expect(skills1[0]!.id).toBe('my-custom-prompt');
+    expect(skills1[0]!.description).toBe('Web skill');
+    res1.cleanup();
+  });
+
+  it('resolves embedded HTML with code blocks and detects root skill', async () => {
+    const mockFetcher = vi.fn().mockResolvedValue({
+      body: '<html><body><pre><code>---\nname: embedded-skill\ndescription: Embedded\n---\n# Embedded\n</code></pre></body></html>',
+      status: 200,
+      contentType: 'text/html',
+      finalUrl: 'https://example.com/page-with-code',
+    });
+
+    const res2 = await web.resolveWebSource('https://example.com/page-with-code', {}, mockFetcher);
+    const skills2 = listKind(res2.root, 'skill');
+    expect(skills2).toHaveLength(1);
+    expect(skills2[0]!.id).toBe('embedded-skill');
+    res2.cleanup();
+  });
+
+  it('extracts GitHub tree link from website HTML and delegates to git resolver', async () => {
+    const htmlWithTree = `
+      <!DOCTYPE html>
+      <html>
+        <head><title>Awesome Skill Hub</title></head>
+        <body>
+          <a href="https://github.com/vercel-labs/agent-skills/tree/main/skills/web-design-guidelines">Source on GitHub</a>
+        </body>
+      </html>
+    `;
+    const mockFetcher = vi.fn().mockResolvedValue({
+      body: htmlWithTree,
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      finalUrl: 'https://awesomeskill.ai/skill/vercel-labs-agent-skills-web-design-guidelines',
+    });
+
+    const mockResolver = vi.fn().mockResolvedValue({
+      root: '/mock/resolved/path',
+      cleanup: () => {},
+    });
+
+    const res3 = await web.resolveWebSource(
+      'https://awesomeskill.ai/skill/vercel-labs-agent-skills-web-design-guidelines',
+      {},
+      mockFetcher,
+      mockResolver,
+    );
+
+    expect(mockResolver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'github-url',
+        url: 'https://github.com/vercel-labs/agent-skills.git',
+        ref: 'main',
+        subpath: 'skills/web-design-guidelines',
+      }),
+      {},
+    );
+    expect(res3.root).toBe('/mock/resolved/path');
   });
 });

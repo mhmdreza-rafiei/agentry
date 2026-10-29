@@ -148,6 +148,14 @@ async function main(): Promise<void> {
     await cmdUpdateAssets(kind as ArtifactKind | 'all', positional[2], positional[3], opts);
     return;
   }
+  if (action === 'from') {
+    // agentry from <url> [selector]
+    const source = positional[1];
+    if (!source) throw new Error('Missing URL. e.g. agentry from https://awesomeskill.ai/skill/...');
+    const selector = positional[2];
+    await cmdAdd('all', source, selector, opts);
+    return;
+  }
   if (action === 'list') {
     // Grammar:
     //   list                         → installed (all)
@@ -176,18 +184,36 @@ async function main(): Promise<void> {
   }
   if (action === 'add') {
     const a1 = positional[1];
-    if (!a1) throw new Error('Missing source or kind. e.g. agentry add author/repo or agentry add skills author/repo');
+    if (!a1) throw new Error('Missing source or kind. e.g. agentry add author/repo, agentry add from <url>, or agentry add skills author/repo');
+
+    // Syntax: agentry add from <url> [selector]
+    if (a1 === 'from') {
+      const source = positional[2];
+      if (!source) throw new Error('Missing URL after "from". e.g. agentry add from https://awesomeskill.ai/skill/...');
+      const selector = positional[3];
+      await cmdAdd('all', source, selector, opts);
+      return;
+    }
+
     const k1 = normalizeKind(a1);
     if (k1 === 'profile') {
       await cmdAddProfile(positional[2]!, positional[3], opts);
       return;
     }
+
+    // Syntax: agentry add <kind> from <url> [selector]  OR  agentry add <kind> <source> [selector]
     if (k1 === 'all' || isKind(k1)) {
-      const source = positional[2];
-      if (!source) throw new Error(`Missing source. e.g. agentry add ${k1} author/repo`);
-      await cmdAdd(k1 as ArtifactKind | 'all', source, positional[3], opts);
+      let source = positional[2];
+      let selector = positional[3];
+      if (source === 'from') {
+        source = positional[3];
+        selector = positional[4];
+      }
+      if (!source) throw new Error(`Missing source. e.g. agentry add ${k1} author/repo or agentry add ${k1} from <url>`);
+      await cmdAdd(k1 as ArtifactKind | 'all', source, selector, opts);
       return;
     }
+
     // Optional kind: agentry add <source> [selector]
     const source = a1;
     const selector = positional[2];

@@ -94,6 +94,7 @@ function withSubpath(root: string, subpath: string, cleanupRoot: string): Resolv
 /**
  * Resolve a source to a local directory.
  * Remote: shallow git clone to temp (also saved to ~/.cache/agentry/repos).
+ * Web URLs: inspected for GitHub links or raw skill content.
  * If clone fails and a prior cache exists, asks via confirmCache (or uses cache when confirmCache says yes).
  */
 export async function resolveSource(
@@ -105,6 +106,11 @@ export async function resolveSource(
   if (parsed.kind === 'local' && parsed.local) {
     if (!existsSync(parsed.local)) throw new Error(`Path not found: ${parsed.raw}`);
     return { root: parsed.local, cleanup: () => {} };
+  }
+
+  if (parsed.kind === 'web-url' && parsed.url) {
+    const { resolveWebSource } = await import('./web.js');
+    return resolveWebSource(parsed.url, opts);
   }
 
   const url = parsed.url;

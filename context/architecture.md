@@ -20,6 +20,7 @@ agentry/
       types.ts
       source_parser.ts     parse + sourceIdentity / sourcesEqual
       git.ts               resolveSource (clone + cache fallback)
+      web.ts               resolveWebSource (hub/website and HTML resolver)
       lock.ts              .agentry/lock.json, installOne, remove + prune, safe copyTreeDereferenced
     registry/agents.ts     70+ providers, universal helpers
     artifacts/

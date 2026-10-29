@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 
 export interface ParsedSource {
-  kind: 'local' | 'github-shorthand' | 'github-url' | 'gitlab-url' | 'git-url';
+  kind: 'local' | 'github-shorthand' | 'github-url' | 'gitlab-url' | 'git-url' | 'web-url';
   raw: string;
   url: string | null; // cloneable git URL (null for local)
   subpath: string; // optional path within the repo
@@ -61,7 +61,11 @@ export function parseSource(source: string): ParsedSource {
     return { kind: 'github-shorthand', raw, url: `https://github.com/${source}.git`, subpath: '', local: null };
   }
 
-  throw new Error(`Cannot parse source "${source}". Use author/repo, a GitHub/GitLab URL, a git URL, or a local path.`);
+  if (/^https?:\/\//i.test(source)) {
+    return { kind: 'web-url', raw, url: source, subpath: '', local: null };
+  }
+
+  throw new Error(`Cannot parse source "${source}". Use author/repo, a GitHub/GitLab URL, a git URL, a skill website URL, or a local path.`);
 }
 
 /** Normalize a source string for lockfile matching (URL/path identity). */
@@ -69,6 +73,7 @@ export function sourceIdentity(source: string): string {
   try {
     const p = parseSource(source);
     if (p.kind === 'local' && p.local) return `local:${resolve(p.local).replace(/\\/g, '/').toLowerCase()}`;
+    if (p.kind === 'web-url') return `web:${(p.url || '').toLowerCase()}`;
     const url = (p.url || '').replace(/\.git$/i, '').replace(/\/+$/, '').toLowerCase();
     const sub = p.subpath ? `/${p.subpath.replace(/^\/+|\/+$/g, '')}` : '';
     const ref = p.ref ? `@${p.ref}` : '';

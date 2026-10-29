@@ -95,6 +95,8 @@ agentry list skills
 | Command | Description |
 | --- | --- |
 | `agentry add [kind] <source> [selector]` | Discover and install artifacts (kind is optional) |
+| `agentry add from <url> [selector]` | Install directly from website/hub URL (e.g. awesomeskill.ai) |
+| `agentry from <url> [selector]` | Alias for `add from <url>` |
 | `agentry add profile <name> [source]` | Apply a local `profile/<name>.yaml` bundle |
 | `agentry list` | List installed artifacts |
 | `agentry list <kind>` | List installed artifacts of one kind |
@@ -110,6 +112,14 @@ agentry list skills
 ### Source formats
 
 ```bash
+# Web URL / Skill Directory / Marketplaces (e.g. awesomeskill.ai)
+agentry add from https://awesomeskill.ai/skill/my-skills-prompt-enhancer
+agentry from https://awesomeskill.ai/skill/my-skills-prompt-enhancer
+agentry add https://awesomeskill.ai/skill/my-skills-prompt-enhancer
+
+# Direct raw markdown or GitHub Gist
+agentry add https://gist.github.com/username/gistid
+
 # GitHub shorthand (single-skill repo or catalog)
 agentry add mhmdreza-rafiei/agent-tools
 agentry add skills mhmdreza-rafiei/agent-tools
@@ -177,7 +187,7 @@ Example catalog used throughout this README: [`mhmdreza-rafiei/agent-tools`](htt
 
 ## How it works
 
-1. Resolve a source (local path or shallow git clone).
+1. Resolve a source (local path, shallow git clone, or web URL / hub / gist).
 2. Discover artifacts under `<kind>s/` **and** root markers:
    - Root `SKILL.md` (standalone single-skill repo)
    - Root `AGENT.md` / `RULE.md` / `.cursorrules` / `.mdc` files

@@ -5,7 +5,7 @@ Agentry is a raw installer CLI. It fetches **agents, skills, rules, scripts, and
 ## About
 
 - TypeScript ESM, Node >=22.20. Runtime deps: `@clack/prompts`, `picocolors`, `yaml`, `zod`, `xdg-basedir`, `@vercel/detect-agent` (UI libs bundled by `obuild`).
-- Sources: local path, GitHub `author/repo`, GitHub/GitLab URL, tree URL, any git URL (shallow clone + optional cache under `~/.cache/agentry/repos`).
+- Sources: local path, GitHub `author/repo`, GitHub/GitLab URL, tree URL, any git URL, or website URLs/hubs (`add from <url>` e.g. awesomeskill.ai) (shallow clone + optional cache under `~/.cache/agentry/repos`).
 - Dual-mode discovery: `<kind>s/` folders **and** root markers (`SKILL.md`, `AGENT.md`, `RULE.md`, `.cursorrules`, `.mdc`, `profile.yaml`, scripts).
 - Ignores: `.agentryignore` / `.agentry.ignore` support + built-in ignores (`.git`, `.github`, `node_modules`, etc.).
 - Optional kind: `agentry add <source> [selector]` defaults kind to all and discovers all kinds.

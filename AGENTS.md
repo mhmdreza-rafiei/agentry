@@ -4,7 +4,7 @@
 
 ## How it works
 
-- `agentry add <kind> <source> [selector]` — fetch a source (`author/repo`, git URL, GitHub tree URL, GitLab URL, or local path) and install matching artifacts. Omit the selector to list-and-pick. Use `--agent cursor --agent claude-code` to target specific providers (or `--agent '*'` for all). Kinds are singular (`skill | rule | agent | profile | script`); plurals are accepted and normalized.
+- `agentry add <kind> <source> [selector]` — fetch a source (`author/repo`, git URL, GitHub tree URL, GitLab URL, web hub/directory URL via `add from <url>`, or local path) and install matching artifacts. Omit the selector to list-and-pick. Use `--agent cursor --agent claude-code` to target specific providers (or `--agent '*'` for all). Kinds are singular (`skill | rule | agent | profile | script`); plurals are accepted and normalized.
 - `agentry add profile <name> [source]` — read `profile/<name>.yaml` (a bundled install config: artifacts + targets + scope) and install everything it lists from the source (or per-artifact `source` overrides).
 - `agentry remove <kind> [source] [selector]` / `agentry list [source] [kind] [selector]` / `agentry update [kind] [source] [selector]` / `agentry init <kind> [name] [category]` / `agentry uninstall`.
 - `agentry list` (no source) lists installed artifacts; `agentry list skills` filters by kind; `agentry list author/repo …` discovers a source.
