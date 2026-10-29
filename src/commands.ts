@@ -75,7 +75,8 @@ export async function cmdAdd(kind: ArtifactKind | 'all', source: string, selecto
     if (!artifacts.length) { ui.outro(c.red(`Nothing found for "${kind}${selector ? ' ' + selector : ''}" in ${source}.`)); return; }
     await delayQuiet(320);
     ui.blank();
-    if (opts.dryRun) { const agents = await resolveAgentList(opts, 'install'); ui.preview(artifacts, agents); return; }
+    ui.showFoundArtifacts(artifacts);
+    if (opts.dryRun) { const agents = await resolveAgentList(opts, 'install', true); ui.preview(artifacts, agents); return; }
 
     let chosen = artifacts;
     if (!selector && artifacts.length > 1 && !opts.all && !opts.yes && !ui.isQuiet()) {
@@ -107,6 +108,7 @@ export async function cmdAdd(kind: ArtifactKind | 'all', source: string, selecto
         askScope ? 'installation scope' : 'install summary',
       );
     }
+  
     if (!(await ensureInstallScope(opts, 'install'))) return;
     if (askScope) await ui.sectionTransition('scope set', 'install summary');
     installAll(chosen, opts, agentList, source);
@@ -127,8 +129,8 @@ export async function cmdAddProfile(name: string, source: string | undefined, op
   const { file, profile } = loadProfile(name);
   const repo = source || (profile.artifacts.skills[0]?.source ?? profile.artifacts.rules[0]?.source);
   if (!repo) throw new Error(`No source given and ${file} lists none. Try: agentry add profile ${name} author/repo`);
-  const agentList = await resolveAgentList(opts, 'install');
-  if (!(await ensureInstallScope(opts, 'install'))) return;
+
+
   const { root, cleanup } = await resolveSourceWithUi(repo, opts);
   try {
     const artifacts = [];
@@ -142,12 +144,19 @@ export async function cmdAddProfile(name: string, source: string | undefined, op
         if (ref.source) src.cleanup();
       }
     }
-    if (opts.dryRun) { ui.preview(artifacts, agentList); return; }
+    ui.showFoundArtifacts(artifacts, `Profile: ${name}`);
+    if (opts.dryRun) {
+      const agentList = await resolveAgentList(opts, 'install', true);
+      ui.preview(artifacts, agentList);
+      return;
+    }
+    const agentList = await resolveAgentList(opts, 'install');
+    if (!(await ensureInstallScope(opts, 'install'))) return;
     installAll(artifacts, opts, agentList, repo);
   } finally { cleanup(); }
 }
 
-async function resolveAgentList(opts: CliOpts, action: ui.AgentAction = 'install'): Promise<AgentConfig[]> {
+async function resolveAgentList(opts: CliOpts, action: ui.AgentAction = 'install', nonInteractive = false): Promise<AgentConfig[]> {
   if (opts.all) return listAgents();
   if (opts.agents.length) {
     const { agents, unknown } = resolveAgents(opts.agents);
@@ -159,7 +168,7 @@ async function resolveAgentList(opts: CliOpts, action: ui.AgentAction = 'install
   const visibleUniversal = getVisibleUniversalAgents();
   const others = getNonUniversalAgents();
   const detectedOthers = detected.filter((n) => others.some((o) => o.name === n));
-  if (ui.isQuiet() || opts.yes) {
+  if (ui.isQuiet() || opts.yes || nonInteractive) {
     const picked = detectedOthers.length ? detectedOthers : ['cursor'];
     return [...universal, ...others.filter((o) => picked.includes(o.name))];
   }
@@ -438,6 +447,7 @@ export async function cmdUpdateAssets(
         620,
       );
       if (!artifacts.length) { ui.warn(`Nothing found in ${source}.`); return; }
+      ui.showFoundArtifacts(artifacts, 'Found artifacts to update');
 
       let chosen = artifacts;
       if (!selector && artifacts.length > 1 && !opts.all && !opts.yes && !ui.isQuiet()) {

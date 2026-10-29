@@ -27,8 +27,12 @@ Public-facing CLI on `main`. History rewritten to remove Cursor Agent authorship
   - Resolves arbitrary websites and hubs (e.g. `awesomeskill.ai/skill/...`): auto-detects embedded GitHub tree URLs, canonical repo links, GitHub Gists, or direct raw markdown / embedded HTML `<pre><code>` code blocks.
   - Zero external dependencies: powered by Node standard `http`/`https`.
   - Recorded in `.agentry/lock.json` as `web:<url>`.
+- **Artifact Listing Order UX**:
+  - Lists found artifacts with kind, ID, and description immediately after discovery, BEFORE prompting to choose target agents or scope.
 - **Unit Tests**:
   - 31 hermetic vitest tests in `tests/core.ts` (all passing).
+
+
 
 ## Verify
 

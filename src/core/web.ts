@@ -21,7 +21,7 @@ export function fetchUrl(url: string, maxRedirects = 5): Promise<FetchedWeb> {
       url,
       {
         headers: {
-          'User-Agent': 'agentry/0.3.1 (+https://github.com/mhmdreza-rafiei/agentry)',
+          'User-Agent': 'agentry/0.3.2 (+https://github.com/mhmdreza-rafiei/agentry)',
           Accept: 'text/html,application/xhtml+xml,text/plain,text/markdown,application/json,*/*',
         },
       },

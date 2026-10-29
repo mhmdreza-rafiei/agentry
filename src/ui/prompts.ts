@@ -466,6 +466,35 @@ export async function selectAgents(
   return out;
 }
 
+/**
+ * Show a panel listing the found artifacts with their kind, ID, and description
+ * before choosing target agents.
+ */
+export function showFoundArtifacts(
+  artifacts: Artifact[],
+  title = artifacts.length === 1 ? 'Found artifact' : `Found ${artifacts.length} artifacts`,
+): void {
+  blank();
+  const bar = c.dim('│');
+  const corner = c.dim('└');
+  log(`${sky('◆')} ${c.bold(title)}`);
+  log(bar);
+  const maxItems = 12;
+  const shown = artifacts.slice(0, maxItems);
+  for (const a of shown) {
+    const desc = (a.description || '').replace(/\s+/g, ' ').trim().slice(0, 56);
+    log(`${bar}  ${sky('•')} ${c.bold(`${a.kind}/${a.id}`)}`);
+    if (desc) log(`${bar}    ${c.dim(desc)}`);
+
+  }
+  if (artifacts.length > maxItems) {
+    log(`${bar}  ${c.dim(`… +${artifacts.length - maxItems} more artifacts`)}`);
+  }
+  log(bar);
+  log(`${corner}  ${c.dim(`${artifacts.length} artifact${artifacts.length === 1 ? '' : 's'} ready`)}`);
+  blank();
+}
+
 /** Clean install summary panel (title · targets · artifact list). */
 export function installSummary(
   artifacts: Artifact[],
@@ -505,7 +534,7 @@ export function installSummary(
   for (const a of artifacts) {
     const desc = (a.description || '').replace(/\s+/g, ' ').trim().slice(0, 52);
     log(`${bar}  ${sky('•')} ${c.bold(`${a.kind}/${a.id}`)}`);
-    if (desc) log(`${bar}    ${c.dim(desc)}`);
+
   }
   log(bar);
   log(`${corner}  ${c.dim('Review before use — artifacts run with full agent permissions.')}`);
